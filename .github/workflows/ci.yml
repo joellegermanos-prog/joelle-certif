@@ -45,8 +45,8 @@ jobs:
       - name: Install eval deps
         run: pip install -r services/model/requirements.txt mlflow pandas scikit-learn
       - name: Évaluer le modèle vs seuils (golden run)
-        # run: python scripts/evaluate_model.py --release-tag ${{ github.ref_name }} --degrade
-        run: python scripts/evaluate_model.py --release-tag ${{ github.ref_name }} 
+        run: python scripts/evaluate_model.py --release-tag ${{ github.ref_name }} --degrade
+        #run: python scripts/evaluate_model.py --release-tag ${{ github.ref_name }} 
       - name: Ensure MLflow tracking directory exists
         if: always()
         run: |
