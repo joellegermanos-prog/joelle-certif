@@ -1,0 +1,165 @@
+name: CI/CD Pyrenex Prod
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main, joelle]
+    tags: ["v*"]
+  pull_request:
+    branches: [main, joelle]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install model deps
+        run: pip install -r services/model/requirements.txt pytest httpx
+      - name: Tests unitaires + contract test du modèle
+        run: pytest -v services/model/tests
+
+  evaluation-tests:
+    needs: test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install evaluation deps
+        run: pip install -r services/model/requirements.txt pytest mlflow pandas scikit-learn
+      - name: Tests d'évaluation du modèle (golden run + seuils)
+        run: pytest -v tests/test_evaluation.py
+
+  evaluate-model:
+    needs: evaluation-tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install eval deps
+        run: pip install -r services/model/requirements.txt mlflow pandas scikit-learn
+      - name: Évaluer le modèle vs seuils (golden run)
+        # run: python scripts/evaluate_model.py --release-tag ${{ github.ref_name }} --degrade
+        run: python scripts/evaluate_model.py --release-tag ${{ github.ref_name }} 
+      - name: Ensure MLflow tracking directory exists
+        if: always()
+        run: |
+          mkdir -p mlruns
+          ls -la
+          ls -la mlruns || true
+      - name: Upload mlruns (artefact de traçabilité)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: mlruns-${{ github.run_id }}
+          path: mlruns/
+
+  ####### optional ########
+  #build:
+  #  needs: evaluate-model
+  #  if: github.event_name == 'push'
+  #  runs-on: ubuntu-latest
+  #  steps:
+  #    - uses: actions/checkout@v4
+  #    - name: Package model artifact
+  #      run: |
+  #        mkdir -p dist
+  #        cp -r services/model dist/
+  #        tar -czf model-package-${{ github.sha }}.tgz dist
+  #    - name: Upload packaged artifact
+  #      uses: actions/upload-artifact@v4
+  #      with:
+  #        name: model-package-${{ github.sha }}
+  #        path: model-package-${{ github.sha }}.tgz
+
+  build-and-push:
+    needs: evaluate-model
+    if: github.event_name == 'push'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Compute lowercase image name
+        run: |
+          REPO_LC=$(echo "${GITHUB_REPOSITORY}" | tr '[:upper:]' '[:lower:]')
+          echo "IMAGE_NAME=ghcr.io/${REPO_LC}/model" >> $GITHUB_ENV
+
+      - name: Build model image
+        run: |
+          docker build \
+            -t "${IMAGE_NAME}:${GITHUB_SHA}" \
+            -t "${IMAGE_NAME}:latest" \
+            -t "${IMAGE_NAME}:${GITHUB_REF_NAME}" \
+            ./services/model
+
+      - name: Push model image
+        run: |
+          docker push --all-tags "${IMAGE_NAME}"
+####### Webhook #######
+  notify-failure:
+    needs: evaluate-model
+    if: ${{ failure() && needs.evaluate-model.result == 'failure' }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Validate Discord secret
+        env:
+          DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
+        run: |
+          if [ -z "$DISCORD_WEBHOOK_URL" ]; then
+            echo "Missing GitHub secret DISCORD_WEBHOOK_URL"
+            exit 1
+          fi
+
+          case "$DISCORD_WEBHOOK_URL" in
+            https://discord.com/api/webhooks/*|https://discordapp.com/api/webhooks/*)
+              echo "Discord webhook URL detected"
+              ;;
+            *)
+              echo "Invalid Discord webhook URL. Expected something like https://discord.com/api/webhooks/..."
+              exit 1
+              ;;
+          esac
+
+      - name: Notify Discord on evaluation failure
+        env:
+          DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
+        run: |
+          curl -sS -X POST "$DISCORD_WEBHOOK_URL" \
+            -H "Content-Type: application/json" \
+            --data @- <<JSON
+          {
+            "username": "Model Gate",
+            "embeds": [
+              {
+                "title": "🚨 Release blocked by evaluation gate",
+                "description": "The model evaluation failed for this repository.",
+                "color": 15158332,
+                "fields": [
+                  { "name": "Repository", "value": "${{ github.repository }}", "inline": true },
+                  { "name": "Branch", "value": "${{ github.ref_name }}", "inline": true },
+                  { "name": "Run", "value": "[Open run](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }})", "inline": false }
+                ]
+              }
+            ]
+          }
+          JSON

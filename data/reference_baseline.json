@@ -1,0 +1,16 @@
+{
+  "model_version": "v2.0.0",
+  "reference_set": "data/reference_set.csv",
+  "n_reference": 500,
+  "metrics": {
+    "f1_macro": 0.5951417004048583,
+    "f1_default": 0.42105263157894735,
+    "roc_auc": 0.7246567613315779,
+    "recall_default": 0.6593406593406593
+  },
+  "target_column": "loan_status",
+  "target_mapping": {
+    "Fully Paid": 0,
+    "Charged Off": 1
+  }
+}
