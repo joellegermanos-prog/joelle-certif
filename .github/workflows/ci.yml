@@ -115,7 +115,7 @@ jobs:
       - name: Push model image
         run: |
           docker push --all-tags "${IMAGE_NAME}"
-####### Webhook ######
+####### Webhook #######
   notify-failure:
     needs: evaluate-model
     if: ${{ failure() && needs.evaluate-model.result == 'failure' }}
