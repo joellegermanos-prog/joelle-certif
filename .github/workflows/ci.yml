@@ -1,4 +1,4 @@
-name: CI/CD Pyrenex Prod
+name: CI/CD CISIA Emploi
 
 on:
   workflow_dispatch:
