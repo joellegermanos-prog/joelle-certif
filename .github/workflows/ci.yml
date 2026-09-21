@@ -21,6 +21,19 @@ jobs:
       - name: Tests unitaires + contract test du modèle
         run: pytest -v services/model/tests
 
+  backend-tests:
+    needs: test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install backend dependencies
+        run: pip install -r services/backend/requirements.txt pytest httpx
+      - name: Tests API backend
+        run: pytest -v services/backend/tests
+
   evaluation-tests:
     needs: test
     runs-on: ubuntu-latest
@@ -30,12 +43,14 @@ jobs:
         with:
           python-version: "3.11"
       - name: Install evaluation deps
-        run: pip install -r services/model/requirements.txt pytest mlflow pandas scikit-learn
+        run: pip install -r requirements-dev.txt
       - name: Tests d'évaluation du modèle (golden run + seuils)
         run: pytest -v tests/test_evaluation.py
 
   evaluate-model:
-    needs: evaluation-tests
+    needs:
+      - backend-tests
+      - evaluation-tests
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -43,10 +58,9 @@ jobs:
         with:
           python-version: "3.11"
       - name: Install eval deps
-        run: pip install -r services/model/requirements.txt mlflow pandas scikit-learn
+        run: pip install -r requirements-dev.txt
       - name: Évaluer le modèle vs seuils (golden run)
-        run: python scripts/evaluate_model.py --release-tag ${{ github.ref_name }} --degrade
-        #run: python scripts/evaluate_model.py --release-tag ${{ github.ref_name }} 
+        run: python scripts/evaluate_model.py --release-tag ${{ github.ref_name }}
       - name: Ensure MLflow tracking directory exists
         if: always()
         run: |

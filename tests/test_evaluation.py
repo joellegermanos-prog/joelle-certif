@@ -16,8 +16,8 @@ from scripts.evaluate_model import (
     load_reference_set,
 )
 
-MODEL_PATH = ROOT / "services" / "model" / "models" / "pyrenex_risk_v2.joblib"
-META_PATH = ROOT / "services" / "model" / "models" / "pyrenex_risk_v2.json"
+MODEL_PATH = ROOT / "services" / "model" / "models" / "cisia_emploi_xgboost_multimodal_complet_balanced.joblib"
+META_PATH = ROOT / "services" / "model" / "models" / "cisia_emploi_xgboost_multimodal_complet_balanced.json"
 
 def test_reference_baseline_matches_current_model():
     model = joblib.load(MODEL_PATH)
@@ -27,23 +27,23 @@ def test_reference_baseline_matches_current_model():
     metrics = compute_metrics(model, df, meta)
     baseline = load_baseline()
 
-    for name in ["f1_macro", "f1_default", "roc_auc", "recall_default"]:
+    for name in ["f1_macro", "f1_classe_2", "roc_auc_ovr_macro", "recall_classe_2"]:
         assert abs(metrics[name] - baseline["metrics"][name]) < 1e-12
 
 def test_thresholds_detect_degradation():
     baseline = {
         "metrics": {
-            "f1_macro": 0.5951,
-            "f1_default": 0.4211,
-            "roc_auc": 0.7247,
-            "recall_default": 0.6593,
+            "f1_macro": 0.6996,
+            "f1_classe_2": 0.5957,
+            "roc_auc_ovr_macro": 0.8634,
+            "recall_classe_2": 0.6222,
         }
     }
     metrics = {
         "f1_macro": 0.45,
-        "f1_default": 0.21,
-        "roc_auc": 0.47,
-        "recall_default": 0.33,
+        "f1_classe_2": 0.21,
+        "roc_auc_ovr_macro": 0.47,
+        "recall_classe_2": 0.33,
     }
 
     violations = check_thresholds(metrics, baseline)
@@ -56,7 +56,7 @@ def test_mlflow_params_are_loaded_from_model_metadata():
         "model_version": "v2.0.0",
         "dataset_sha256": "abc123",
         "hyperparameters": {"n_estimators": 200, "max_depth": 10},
-        "target_column": "loan_status",
+        "target": {"column": "classe_retour_emploi"},
     }
 
     params = build_mlflow_params(meta, "v2.0.0", 512)
@@ -70,17 +70,17 @@ def test_mlflow_params_are_loaded_from_model_metadata():
 def test_release_gate_blocks_on_violation():
     baseline = {
         "metrics": {
-            "f1_macro": 0.5951,
-            "f1_default": 0.4211,
-            "roc_auc": 0.7247,
-            "recall_default": 0.6593,
+            "f1_macro": 0.6996,
+            "f1_classe_2": 0.5957,
+            "roc_auc_ovr_macro": 0.8634,
+            "recall_classe_2": 0.6222,
         }
     }
     metrics = {
         "f1_macro": 0.45,
-        "f1_default": 0.21,
-        "roc_auc": 0.47,
-        "recall_default": 0.33,
+        "f1_classe_2": 0.21,
+        "roc_auc_ovr_macro": 0.47,
+        "recall_classe_2": 0.33,
     }
 
     violations = check_thresholds(metrics, baseline)

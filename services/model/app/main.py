@@ -8,11 +8,13 @@ métriques métier custom). Service **interne** : il est appelé par le
 from __future__ import annotations
 
 import json
+import os
 import sys
 from contextlib import asynccontextmanager
 from pathlib import Path
 
 import joblib
+import mlflow
 import pandas as pd
 from fastapi import FastAPI, HTTPException, Request, status
 from loguru import logger
@@ -20,8 +22,17 @@ from prometheus_fastapi_instrumentator import Instrumentator
 
 from app.metrics import MODEL_INFO, observe_prediction
 from app.middleware import LoggingMiddleware
-from app.schemas import HealthResponse, InfoResponse, EmploymentApplication, Prediction
+from app.schemas import (
+    EmploymentApplication,
+    HealthResponse,
+    InfoResponse,
+    Prediction,
+    TrainRequest,
+    TrainResponse,
+)
 from preprocess import create_features
+from sklearn.base import clone
+from sklearn.metrics import accuracy_score, f1_score
 
 # --- Loguru -----------------------------------------------------------------
 
@@ -142,3 +153,50 @@ async def predict(application: EmploymentApplication, request: Request) -> Predi
         model_version=app.state.metadata["model_version"],
         request_id=request_id,
     )
+
+
+@app.post("/train", response_model=TrainResponse, status_code=status.HTTP_200_OK)
+async def train(request_data: TrainRequest, request: Request) -> TrainResponse:
+    """Réentraîne une copie du modèle et la rend active après validation."""
+    request_id = getattr(request.state, "request_id", "n/a")
+    expected_token = os.environ.get("TRAIN_API_TOKEN")
+    provided_token = request.headers.get("X-Train-Token")
+    if expected_token and provided_token != expected_token:
+        logger.bind(request_id=request_id).warning("Training rejected")
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Training forbidden")
+
+    try:
+        records = [record.model_dump() for record in request_data.records]
+        frame = create_features(pd.DataFrame(records))
+        target = frame.pop("classe_retour_emploi")
+        candidate = clone(app.state.model)
+
+        mlflow.set_tracking_uri(os.environ.get("MLFLOW_TRACKING_URI", "file:./mlruns"))
+        mlflow.set_experiment(request_data.experiment_name)
+        with mlflow.start_run() as run:
+            candidate.fit(frame, target)
+            predictions = candidate.predict(frame)
+            mlflow.log_param("rows", len(frame))
+            mlflow.log_metric("train_accuracy", float(accuracy_score(target, predictions)))
+            mlflow.log_metric("train_f1_macro", float(f1_score(target, predictions, average="macro")))
+            mlflow.set_tag("request_id", request_id)
+            mlflow.set_tag("model_type", type(candidate).__name__)
+            run_id = run.info.run_id
+
+        app.state.model = candidate
+        app.state.metadata["model_version"] = f"trained-{run_id[:8]}"
+        logger.bind(request_id=request_id, rows=len(frame), mlflow_run_id=run_id).info(
+            "Model trained successfully"
+        )
+        return TrainResponse(
+            status="trained",
+            rows=len(frame),
+            model_version=app.state.metadata["model_version"],
+            mlflow_run_id=run_id,
+        )
+    except Exception as exc:  # noqa: BLE001 - API boundary
+        logger.bind(request_id=request_id).exception("Training failed")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Training failed: {exc.__class__.__name__}",
+        ) from exc

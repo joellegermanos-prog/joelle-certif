@@ -47,14 +47,8 @@
       <option value="G1203">G1203 - Animation de loisirs divers</option>
     </select>
 
-    <label for="est_allocataire">Allocataire</label>
-    <select id="est_allocataire" name="est_allocataire" required>
-      <option value="1" selected>Oui</option>
-      <option value="0">Non</option>
-    </select>
-
     <label for="departement">Département</label>
-    <select id="departement" name="code_insee_commune" required>
+    <select id="departement" name="departement" required>
       <option value="01">01 - Ain</option>
       <option value="02">02 - Aisne</option>
       <option value="03">03 - Allier</option>
@@ -174,17 +168,12 @@
     form.addEventListener('submit', async (event) => {
       event.preventDefault();
       const data = new FormData(form);
-      const departement = data.get('code_insee_commune');
-      const codeInseeCompatible = departement.length === 2
-        ? `${departement}000`
-        : departement;
       const payload = {
         age: Number(data.get('age')),
         niveau_diplome: data.get('niveau_diplome'),
         anciennete_poste_ans: Number(data.get('anciennete_poste_ans')),
         code_rome_vise: data.get('code_rome_vise'),
-        est_allocataire: Number(data.get('est_allocataire')),
-        code_insee_commune: codeInseeCompatible,
+        departement: data.get('departement'),
         synthese_entretien: data.get('synthese_entretien')
       };
 

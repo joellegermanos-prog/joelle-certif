@@ -16,8 +16,25 @@ class EmploymentApplication(BaseModel):
     niveau_diplome: Literal["Sans diplôme", "Bac", "Bac+2", "Bac+5"]
     anciennete_poste_ans: float = Field(..., ge=0)
     code_rome_vise: str
+    est_allocataire: Literal[0, 1] = 0
     code_insee_commune: str
     synthese_entretien: str
+
+
+class TrainingRecord(EmploymentApplication):
+    classe_retour_emploi: Literal[0, 1, 2]
+
+
+class TrainRequest(BaseModel):
+    records: list[TrainingRecord] = Field(..., min_length=10, max_length=10000)
+    experiment_name: str = Field(default="cisia-employment", min_length=1, max_length=100)
+
+
+class TrainResponse(BaseModel):
+    status: Literal["trained"]
+    rows: int
+    model_version: str
+    mlflow_run_id: str | None = None
 
 
 class Prediction(BaseModel):

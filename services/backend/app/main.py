@@ -17,7 +17,13 @@ from fastapi import FastAPI, HTTPException, Request, status
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.middleware import LoggingMiddleware
-from app.schemas import HealthResponse, EmploymentApplication, Prediction
+from app.schemas import (
+    EmploymentApplication,
+    HealthResponse,
+    Prediction,
+    TrainRequest,
+    TrainResponse,
+)
 
 from prometheus_client import Counter, Histogram
 from prometheus_fastapi_instrumentator import Instrumentator
@@ -143,3 +149,28 @@ async def score(application: EmploymentApplication, request: Request) -> Predict
         prediction.probabilities[str(prediction.prediction)]
     )
     return prediction
+
+
+@app.post("/train", response_model=TrainResponse, status_code=status.HTTP_200_OK)
+async def train(request_data: TrainRequest, request: Request) -> TrainResponse:
+    """Proxy contrôlé vers le service de réentraînement du modèle."""
+    request_id = getattr(request.state, "request_id", request.headers.get("X-Request-ID", "n/a"))
+    try:
+        async with httpx.AsyncClient(timeout=60.0) as client:
+            response = await client.post(
+                f"{MODEL_URL.rstrip('/')}/train",
+                json=request_data.model_dump(),
+                headers={
+                    "X-Request-ID": request_id,
+                    "X-Train-Token": request.headers.get("X-Train-Token", ""),
+                },
+            )
+    except httpx.RequestError as exc:
+        MODEL_UPSTREAM_ERRORS_TOTAL.labels(kind="unreachable").inc()
+        raise HTTPException(status_code=503, detail="Model service unavailable") from exc
+
+    if response.status_code >= 400:
+        MODEL_UPSTREAM_ERRORS_TOTAL.labels(kind="training_error").inc()
+        raise HTTPException(status_code=502, detail=response.text[:200])
+
+    return TrainResponse(**response.json())

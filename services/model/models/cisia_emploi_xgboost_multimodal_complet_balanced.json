@@ -4,7 +4,7 @@
   "model_version": "v1.0.0",
   "scenario_name": "multimodal_complet",
   "config_name": "balanced",
-  "created_at_utc": "2026-09-15T14:50:48.364542+00:00",
+  "created_at_utc": "2026-09-21T18:00:28.675775+00:00",
   "versions": {
     "python": "3.12.10",
     "scikit_learn": "1.5.1",
@@ -2579,7 +2579,9 @@
     },
     "categorical": [
       "code_rome_vise",
-      "departement"
+      "departement",
+      "est_allocataire",
+      "nationalite_hors_ue"
     ],
     "text": [
       "synthese_entretien"
@@ -2590,6 +2592,8 @@
       "niveau_diplome",
       "code_rome_vise",
       "departement",
+      "est_allocataire",
+      "nationalite_hors_ue",
       "synthese_entretien"
     ]
   },
@@ -2607,7 +2611,7 @@
     }
   },
   "training": {
-    "training_seconds": 0.7223349999985658,
+    "training_seconds": 1.0261507999966852,
     "trained_on": "train_split_only",
     "cross_validation": {
       "enabled": true,
@@ -2617,28 +2621,40 @@
       "random_state": 42,
       "metrics": {
         "accuracy": {
-          "mean": 0.7065,
-          "std": 0.02272663635472702,
-          "min": 0.6775,
-          "max": 0.74
+          "mean": 0.7274999999999999,
+          "std": 0.025149552679918592,
+          "min": 0.6975,
+          "max": 0.765
+        },
+        "erreur_critique_2_vers_0": {
+          "mean": 0.09946727549467275,
+          "std": 0.0239222369612213,
+          "min": 0.06944444444444445,
+          "max": 0.1388888888888889
         },
         "f1_class_2": {
-          "mean": 0.6198998988897231,
-          "std": 0.030575866257462885,
-          "min": 0.5899280575539568,
-          "max": 0.6753246753246753
+          "mean": 0.6444163798898376,
+          "std": 0.015170271690536604,
+          "min": 0.625,
+          "max": 0.6713286713286714
         },
         "f1_macro": {
-          "mean": 0.6918961970685663,
-          "std": 0.022139871284285257,
-          "min": 0.668814000734245,
-          "max": 0.7291189760375455
+          "mean": 0.7136270358652252,
+          "std": 0.022050029067157768,
+          "min": 0.686712739045522,
+          "max": 0.7475574255679454
         },
         "f1_weighted": {
-          "mean": 0.7072260168081771,
-          "std": 0.022864607477458075,
-          "min": 0.6793556763975301,
-          "max": 0.7408154343131106
+          "mean": 0.7280888813481484,
+          "std": 0.0244297088685014,
+          "min": 0.6992317447210098,
+          "max": 0.764717290311495
+        },
+        "recall_classe_2": {
+          "mean": 0.6797184170471842,
+          "std": 0.03492180603652769,
+          "min": 0.6301369863013698,
+          "max": 0.7361111111111112
         }
       },
       "tfidf_min_df_used_by_fold": [
@@ -2649,14 +2665,105 @@
         2
       ]
     },
-    "evaluation_status": "not_evaluated",
+    "evaluation_status": "completed",
     "evaluation_script": "src/evaluate.py",
     "holdout_used_during_training": false
   },
   "artifacts": {
     "model_path": "C:\\Users\\a895479\\projet\\examen\\models\\cisia_emploi_xgboost_multimodal_complet_balanced.joblib",
     "metadata_path": "C:\\Users\\a895479\\projet\\examen\\models\\cisia_emploi_xgboost_multimodal_complet_balanced.json",
-    "model_size_bytes": 679525,
-    "model_size_mb": 0.648046
+    "model_size_bytes": 695908,
+    "model_size_mb": 0.66367
+  },
+  "evaluation": {
+    "status": "completed",
+    "evaluated_at_utc": "2026-09-21T18:01:49.442902+00:00",
+    "model_name": "cisia_emploi",
+    "model_type": "xgboost",
+    "scenario_name": "multimodal_complet",
+    "config_name": "balanced",
+    "evaluation_dataset": {
+      "type": "holdout",
+      "rows": 500,
+      "indices_source": "metadata.dataset.test_indices",
+      "sha256": "2b9cb8c813b5f97540f0130b5e1cae2bad7ce5cbc1f57ffce51f54b498a7b34e"
+    },
+    "metrics": {
+      "latency_mean_ms": 7.386421999690356,
+      "latency_median_ms": 7.23170000128448,
+      "latency_p95_ms": 8.115504994930234,
+      "cpu_mean_ms": 80.3125,
+      "cpu_p95_ms": 187.5,
+      "cpu_seconds_1000_predictions": 80.3125,
+      "latency_samples": 100,
+      "accuracy": 0.738,
+      "f1_macro": 0.7206660814982192,
+      "f1_weighted": 0.7390350960064016,
+      "f1_class_0": 0.7967479674796748,
+      "f1_class_1": 0.7342342342342343,
+      "f1_class_2": 0.6310160427807486,
+      "recall_classe_2": 0.6555555555555556,
+      "precision_classe_2": 0.6082474226804123,
+      "erreur_critique_2_vers_0": 6,
+      "confusion_matrix": [
+        [
+          147,
+          33,
+          7
+        ],
+        [
+          29,
+          163,
+          31
+        ],
+        [
+          6,
+          25,
+          59
+        ]
+      ],
+      "classification_report": {
+        "Retour rapide": {
+          "precision": 0.8076923076923077,
+          "recall": 0.786096256684492,
+          "f1-score": 0.7967479674796748,
+          "support": 187.0
+        },
+        "Retour moyen": {
+          "precision": 0.7375565610859729,
+          "recall": 0.7309417040358744,
+          "f1-score": 0.7342342342342343,
+          "support": 223.0
+        },
+        "Risque longue durée": {
+          "precision": 0.6082474226804123,
+          "recall": 0.6555555555555556,
+          "f1-score": 0.6310160427807486,
+          "support": 90.0
+        },
+        "accuracy": 0.738,
+        "macro avg": {
+          "precision": 0.7178320971528976,
+          "recall": 0.7241978387586406,
+          "f1-score": 0.7206660814982192,
+          "support": 500.0
+        },
+        "weighted avg": {
+          "precision": 0.7405116854037412,
+          "recall": 0.738,
+          "f1-score": 0.7390350960064016,
+          "support": 500.0
+        }
+      },
+      "roc_auc_ovr_macro": 0.8749822692689694
+    },
+    "artifacts": {
+      "model_path": "models\\cisia_emploi_xgboost_multimodal_complet_balanced.joblib",
+      "metadata_path": "models\\cisia_emploi_xgboost_multimodal_complet_balanced.json",
+      "evaluation": "C:\\Users\\a895479\\projet\\examen\\reports\\cisia_emploi_xgboost_multimodal_complet_balanced_evaluation.json",
+      "confusion_matrix": "C:\\Users\\a895479\\projet\\examen\\reports\\cisia_emploi_xgboost_multimodal_complet_balanced_confusion_matrix.png",
+      "classification_report": "C:\\Users\\a895479\\projet\\examen\\reports\\cisia_emploi_xgboost_multimodal_complet_balanced_classification_report.csv",
+      "predictions": "C:\\Users\\a895479\\projet\\examen\\reports\\cisia_emploi_xgboost_multimodal_complet_balanced_predictions.csv"
+    }
   }
 }

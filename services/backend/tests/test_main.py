@@ -41,3 +41,11 @@ def test_score_calls_model_and_returns_prediction(monkeypatch):
     assert payload["prediction"] == 1
     assert payload["probabilities"]["1"] == 0.42
     assert payload["request_id"] == "req-123"
+
+
+def test_train_validates_minimum_records():
+    response = TestClient(app).post(
+        "/train",
+        json={"records": [VALID_APPLICATION]},
+    )
+    assert response.status_code == 422

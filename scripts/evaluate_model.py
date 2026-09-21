@@ -1,11 +1,8 @@
-"""Évaluation continue + tracking MLflow (SQUELETTE M5-B2 À COMPLÉTER).
+"""Évaluation continue multiclasses du modèle CISIA + tracking MLflow.
 
 À chaque release : recalcule les métriques cibles sur un jeu de référence
 figé, **trace le run dans MLflow**, compare aux seuils, et **sort un code
 retour non-zéro** si dégradation (→ bloque la release en CI).
-
-Renommez ce fichier en `scripts/evaluate_model.py` une fois complété.
-Mini-cours : `07_MLflow_tracking_essentiel.md` + `08_Evaluation_continue_seuils`.
 
 Usage cible::
 
@@ -33,12 +30,24 @@ from pathlib import Path
 import joblib
 import mlflow
 import pandas as pd
-from sklearn.metrics import f1_score, recall_score, roc_auc_score
+from sklearn.metrics import (
+    accuracy_score,
+    f1_score,
+    precision_score,
+    recall_score,
+    roc_auc_score,
+)
 
 ROOT = Path(__file__).parent.parent
-MODELS_DIR = ROOT / "services" / "model" / "models"
+SERVICE_ROOT = ROOT / "services" / "model"
+sys.path.insert(0, str(SERVICE_ROOT))
+from preprocess import create_features  # noqa: E402
+
+MODELS_DIR = SERVICE_ROOT / "models"
 REFERENCE_SET = ROOT / "data" / "reference_set.csv"
 REFERENCE_BASELINE = ROOT / "data" / "reference_baseline.json"
+SOURCE_DATASET = ROOT / "data" / "dataset_trajectoire_emploi.csv"
+MODEL_META = MODELS_DIR / "cisia_emploi_xgboost_multimodal_complet_balanced.json"
 
 # Seuils conservateurs pour bloquer une release uniquement sur une vraie
 # dégradation du modèle sur le jeu de référence gelé.
@@ -48,30 +57,29 @@ REFERENCE_BASELINE = ROOT / "data" / "reference_baseline.json"
 # jeu de référence (ici ~0.02). On garde donc des marges sûres sans se
 # déclencher sur du bruit de sampling.
 THRESHOLDS: dict[str, dict[str, float]] = {
-    "f1_macro": {"absolute_min": 0.56, "max_drop_vs_baseline": 0.04},
-    "f1_default": {"absolute_min": 0.36, "max_drop_vs_baseline": 0.05},
-    "roc_auc": {"absolute_min": 0.70, "max_drop_vs_baseline": 0.04},
-    "recall_default": {"absolute_min": 0.60, "max_drop_vs_baseline": 0.05},
+    "f1_macro": {"absolute_min": 0.60, "max_drop_vs_baseline": 0.04},
+    "f1_classe_2": {"absolute_min": 0.50, "max_drop_vs_baseline": 0.05},
+    "recall_classe_2": {"absolute_min": 0.50, "max_drop_vs_baseline": 0.05},
+    "roc_auc_ovr_macro": {"absolute_min": 0.70, "max_drop_vs_baseline": 0.04},
 }
 
 
 def compute_metrics(model, df: pd.DataFrame, meta: dict) -> dict[str, float]:
     """Calcule les métriques cibles sur le jeu de référence."""
-    target_col = meta["target_column"]
-    target_map = meta["target_mapping"]
-
-    feature_cols = meta["feature_columns_numeric"] + meta["feature_columns_categorical"]
-    X = df[feature_cols]
-    y_true = df[target_col].map(target_map).astype(int)
+    target_col = meta["target"]["column"]
+    X = create_features(df.drop(columns=[target_col]))
+    y_true = df[target_col].astype(int)
 
     y_pred = model.predict(X)
-    y_proba = model.predict_proba(X)[:, 1]
+    y_proba = model.predict_proba(X)
 
     return {
-        "f1_macro": float(f1_score(y_true, y_pred, average="macro")),
-        "f1_default": float(f1_score(y_true, y_pred, pos_label=1, zero_division=0)),
-        "roc_auc": float(roc_auc_score(y_true, y_proba)),
-        "recall_default": float(recall_score(y_true, y_pred, pos_label=1, zero_division=0)),
+        "accuracy": float(accuracy_score(y_true, y_pred)),
+        "f1_macro": float(f1_score(y_true, y_pred, average="macro", zero_division=0)),
+        "f1_classe_2": float(f1_score(y_true, y_pred, labels=[2], average=None, zero_division=0)[0]),
+        "recall_classe_2": float(recall_score(y_true, y_pred, labels=[2], average=None, zero_division=0)[0]),
+        "precision_classe_2": float(precision_score(y_true, y_pred, labels=[2], average=None, zero_division=0)[0]),
+        "roc_auc_ovr_macro": float(roc_auc_score(y_true, y_proba, multi_class="ovr", average="macro")),
     }
 
 
@@ -121,30 +129,20 @@ def freeze_baseline(model, df: pd.DataFrame, meta: dict) -> dict:
     Le fichier JSON produit est la baseline de référence (golden run) que les
     futures releases devront comparer à leur sortie.
     """
-    target_col = meta["target_column"]
-    target_map = meta["target_mapping"]
-
-    y_true = df[target_col].map(target_map).astype(int)
-    feature_cols = meta["feature_columns_numeric"] + meta["feature_columns_categorical"]
-    X = df[feature_cols]
-
-    y_pred = model.predict(X)
-    y_proba = model.predict_proba(X)[:, 1]
-
-    metrics = {
-        "f1_macro": float(f1_score(y_true, y_pred, average="macro")),
-        "f1_default": float(f1_score(y_true, y_pred, pos_label=1, zero_division=0)),
-        "roc_auc": float(roc_auc_score(y_true, y_proba)),
-        "recall_default": float(recall_score(y_true, y_pred, pos_label=1, zero_division=0)),
-    }
+    target_col = meta["target"]["column"]
+    metrics = compute_metrics(model, df, meta)
 
     payload = {
         "model_version": meta["model_version"],
-        "reference_set": "data/reference_set.csv",
+        "reference_set": (
+            "data/reference_set.csv"
+            if REFERENCE_SET.exists()
+            else "data/dataset_trajectoire_emploi.csv:test_indices"
+        ),
         "n_reference": int(len(df)),
         "metrics": metrics,
         "target_column": target_col,
-        "target_mapping": target_map,
+        "target_values": meta["target"]["expected_values"],
     }
 
     REFERENCE_BASELINE.write_text(json.dumps(payload, indent=2), encoding="utf-8")
@@ -161,20 +159,26 @@ def load_reference_set() -> pd.DataFrame:
     `reference_set_TEMPLATE.csv` livré dans le repo est un **exemple de
     format** de 20 lignes, pas un jeu de référence utilisable.
     """
-    if not REFERENCE_SET.exists():
-        raise SystemExit(
-            f"{REFERENCE_SET} est absent.\n"
-            "Ce fichier n'est pas fourni : c'est à vous de le construire à "
-            "partir du holdout M1 (`data/lending_club_holdout.csv`).\n"
-            "Mode d'emploi : data/README.md — étape 0."
-        )
-    df = pd.read_csv(REFERENCE_SET)
-    if len(df) < 100 or df.iloc[:, -1].nunique() < 2:
+    target_column = "classe_retour_emploi"
+    df = pd.read_csv(REFERENCE_SET) if REFERENCE_SET.exists() else pd.DataFrame()
+
+    # Le fichier historique reference_set.csv peut encore être le jeu bancaire.
+    # Dans ce cas, reconstruire le holdout CISIA depuis les indices versionnés.
+    if target_column not in df.columns:
+        if not SOURCE_DATASET.exists() or not MODEL_META.exists():
+            raise SystemExit(
+                "Impossible de construire le jeu de référence CISIA : "
+                "dataset ou métadonnées manquants."
+            )
+        source = pd.read_csv(SOURCE_DATASET)
+        meta = json.loads(MODEL_META.read_text(encoding="utf-8"))
+        df = source.loc[meta["dataset"]["test_indices"]].copy()
+
+    if len(df) < 100 or df[target_column].nunique() < 3:
         raise SystemExit(
             f"{REFERENCE_SET} contient {len(df)} ligne(s) et "
-            f"{df.iloc[:, -1].nunique()} classe(s) de cible.\n"
-            "Un instrument de mesure a besoin des DEUX classes et d'assez "
-            "d'observations de la classe rare (~500 lignes attendues).\n"
+            f"{df.get(target_column, pd.Series(dtype=int)).nunique()} classe(s) de cible.\n"
+            "Un instrument de mesure multiclasses doit contenir les TROIS classes.\n"
             "Avez-vous copié reference_set_TEMPLATE.csv ? C'est un exemple de "
             "format, pas un jeu de référence — cf. data/README.md."
         )
@@ -188,8 +192,14 @@ def build_mlflow_params(meta: dict, release_tag: str, n_reference: int) -> dict:
         "release_tag": release_tag,
         "reference_set": str(REFERENCE_SET.name),
         "n_reference": int(n_reference),
-        "target_column": meta.get("target_column", "unknown"),
-        "dataset_sha256": meta.get("dataset_sha256", "unknown"),
+        "target_column": meta.get("target", {}).get(
+            "column",
+            meta.get("target_column", "unknown"),
+        ),
+        "dataset_sha256": meta.get("dataset", {}).get(
+            "sha256",
+            meta.get("dataset_sha256", "unknown"),
+        ),
     }
 
     hyperparams = meta.get("hyperparameters", {})
@@ -206,8 +216,8 @@ def main() -> int:
     parser.add_argument("--freeze-baseline", action="store_true")
     args = parser.parse_args()
 
-    model = joblib.load(MODELS_DIR / "pyrenex_risk_v2.joblib")
-    meta = json.loads((MODELS_DIR / "pyrenex_risk_v2.json").read_text(encoding="utf-8"))
+    model = joblib.load(MODELS_DIR / "cisia_emploi_xgboost_multimodal_complet_balanced.joblib")
+    meta = json.loads((MODELS_DIR / "cisia_emploi_xgboost_multimodal_complet_balanced.json").read_text(encoding="utf-8"))
     df = load_reference_set()
 
     if args.freeze_baseline:
@@ -218,10 +228,11 @@ def main() -> int:
         # Simule un bug de preprocessing réaliste : les labels sont permutés
         # sans changer les features, ce qui casse l'alignement X / y.
         df = df.copy()
-        df["loan_status"] = df["loan_status"].sample(
-            frac=1.0,
-            random_state=42,
-        ).reset_index(drop=True)
+        df["classe_retour_emploi"] = (
+            df["classe_retour_emploi"]
+            .sample(frac=1.0, random_state=42)
+            .to_numpy()
+        )
 
     metrics = compute_metrics(model, df, meta)
     baseline = load_baseline()  # ← le golden run, PAS metrics_holdout
