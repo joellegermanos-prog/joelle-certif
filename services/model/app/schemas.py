@@ -17,6 +17,7 @@ class EmploymentApplication(BaseModel):
     anciennete_poste_ans: float = Field(..., ge=0)
     code_rome_vise: str
     est_allocataire: Literal[0, 1] = 0
+    nationalite_hors_ue: Literal[0, 1] = 0
     code_insee_commune: str
     synthese_entretien: str
 

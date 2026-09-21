@@ -94,6 +94,8 @@ def test_model_contract_features_and_output():
         "anciennete_poste_ans": 3.0,
         "code_rome_vise": "M1805",
         "code_insee_commune": "75056",
+        "est_allocataire": 0,
+        "nationalite_hors_ue": 0,
         "synthese_entretien": (
             "Recherche un emploi stable dans le domaine informatique."
         ),
