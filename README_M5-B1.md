@@ -43,6 +43,11 @@ backend [http://localhost:8001](http://localhost:8001), model [http://localhost:
 Image `model` publiée sur GitHub Container Registry :
 [github.com/joellegermanos-prog/M5-B1-Romain_Joelle/pkgs/container/m5-b1-romain_joelle%2Fmodel](https://github.com/joellegermanos-prog/M5-B1-Romain_Joelle/pkgs/container/m5-b1-romain_joelle%2Fmodel)
 
+Le workflow utilise le secret GitHub `GHCR_TOKEN` s'il est defini, puis
+revient a `GITHUB_TOKEN`. Pour publier depuis un depot dont le package GHCR
+n'est pas lie au depot, ajouter `GHCR_TOKEN` comme secret Actions avec un token
+ayant la permission `write:packages`.
+
 ## 📊 Grafana local
 
 Dashboard accessible sur [http://localhost:3001](http://localhost:3001).
