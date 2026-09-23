@@ -11,6 +11,9 @@
     textarea { min-height: 120px; resize: vertical; }
     button { margin-top: 1rem; padding: .7rem 1.2rem; font-size: 1rem; cursor: pointer; }
     #result { margin-top: 1rem; padding: 1rem; border-radius: 8px; display: none; }
+    #feedbackPanel { margin-top: 1rem; padding: 1rem; border: 1px solid #d0d7de; border-radius: 8px; display: none; }
+    #requestId { font-family: monospace; background: #f6f8fa; padding: .2rem .4rem; }
+    #feedbackStatus { min-height: 1.2rem; margin-bottom: 0; }
     .ok { background: #e6f4ea; } .ko { background: #fce8e6; }
   </style>
 </head>
@@ -166,10 +169,35 @@
 
   <div id="result"></div>
 
+  <section id="feedbackPanel" aria-labelledby="feedbackTitle">
+    <h2 id="feedbackTitle">Confirmer le résultat observé</h2>
+    <p>Dossier scoré : <strong id="requestId"></strong></p>
+    <form id="feedbackForm">
+      <label for="trueLabel">Résultat réel du dossier</label>
+      <select id="trueLabel" name="true_label" required>
+        <option value="0">Retour rapide</option>
+        <option value="1">Retour moyen</option>
+        <option value="2">Risque de chômage longue durée</option>
+      </select>
+      <label for="feedbackComments">Commentaire conseiller (facultatif)</label>
+      <textarea id="feedbackComments" name="comments" placeholder="Contexte ou précision utile pour le prochain entraînement"></textarea>
+      <button type="submit">Enregistrer le résultat</button>
+      <p id="feedbackStatus" role="status" aria-live="polite"></p>
+    </form>
+  </section>
+
   <script>
     const form = document.getElementById('scoreForm');
     const result = document.getElementById('result');
+    const feedbackPanel = document.getElementById('feedbackPanel');
+    const feedbackForm = document.getElementById('feedbackForm');
+    const requestIdElement = document.getElementById('requestId');
+    const trueLabel = document.getElementById('trueLabel');
+    const feedbackComments = document.getElementById('feedbackComments');
+    const feedbackStatus = document.getElementById('feedbackStatus');
     const labels = { 0: 'Retour rapide', 1: 'Retour moyen', 2: 'Risque de chômage longue durée' };
+    let scoredRequestId = null;
+    let scoredPrediction = null;
 
     form.addEventListener('submit', async (event) => {
       event.preventDefault();
@@ -202,11 +230,51 @@
           .join(' | ');
         result.textContent = `${labels[body.prediction]} - ${probabilities} (modèle ${body.model_version})`;
         result.className = body.prediction === 2 ? 'ko' : 'ok';
+        scoredRequestId = body.request_id;
+        scoredPrediction = body.prediction;
+        requestIdElement.textContent = scoredRequestId;
+        trueLabel.value = String(scoredPrediction);
+        feedbackComments.value = '';
+        feedbackStatus.textContent = '';
+        feedbackPanel.style.display = 'block';
       } catch (error) {
         result.textContent = `Erreur : ${error.message}`;
         result.className = 'ko';
+        feedbackPanel.style.display = 'none';
       }
       result.style.display = 'block';
+    });
+
+    feedbackForm.addEventListener('submit', async (event) => {
+      event.preventDefault();
+      if (!scoredRequestId) return;
+
+      const submitButton = feedbackForm.querySelector('button[type="submit"]');
+      submitButton.disabled = true;
+      feedbackStatus.textContent = 'Enregistrement...';
+      try {
+        const response = await fetch('/api/feedback', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            request_id: scoredRequestId,
+            prediction: scoredPrediction,
+            true_label: Number(trueLabel.value),
+            comments: feedbackComments.value || null
+          })
+        });
+        const body = await response.json();
+        if (!response.ok) throw new Error(body.detail || `HTTP ${response.status}`);
+        feedbackStatus.textContent = body.status === 'already_registered'
+          ? 'Ce résultat avait déjà été enregistré.'
+          : 'Résultat enregistré pour la boucle de feedback.';
+        feedbackForm.querySelectorAll('select, textarea, button').forEach((element) => {
+          element.disabled = true;
+        });
+      } catch (error) {
+        feedbackStatus.textContent = `Erreur : ${error.message}`;
+        submitButton.disabled = false;
+      }
     });
   </script>
 </body>

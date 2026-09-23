@@ -18,6 +18,8 @@ sys.path.insert(0, str(SERVICE_ROOT))
 @pytest.fixture
 def client():
     """TestClient FastAPI (déclenche le lifespan → charge le modèle)."""
+    for module_name in ("app.main", "app.middleware", "app.schemas", "app"):
+        sys.modules.pop(module_name, None)
     from app.main import app
     from fastapi.testclient import TestClient
 

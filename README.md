@@ -235,6 +235,39 @@ docker compose up --build
 > ⚠️ **Ports hôte** : frontend **8088** (pas 8080), Grafana **3001** (pas 3000)
 > — pour éviter les conflits courants. Model 8000, backend 8001, Prometheus 9090.
 
+### Déclenchement du retrain
+
+Les feedbacks sont conservés dans le volume Docker `feedback_data`. Le
+retrainer partage ce volume avec le backend et applique le seuil de 200
+feedbacks non consommés :
+
+```powershell
+./scripts/run_retrain.ps1
+./scripts/run_retrain.ps1 -MinFeedback 1
+```
+
+Sous Linux ou via cron :
+
+```bash
+./scripts/run_retrain.sh 200
+```
+
+Le workflow [retrain.yml](.github/workflows/retrain.yml) ajoute un lancement
+planifié toutes les six heures et un lancement manuel. Un runner GitHub
+hébergé n'a pas accès au volume Docker local : il faut donc lui fournir une
+copie persistante de `feedbacks.db`, ou exécuter le trigger Compose sur la
+machine qui héberge la base de production.
+
+Après une décision `promoted`, le modèle promu peut être déployé localement :
+
+```powershell
+./scripts/deploy_promoted.ps1 -Build
+```
+
+Le script vérifie les deux artefacts promus, configure `MODEL_ARTIFACT`,
+recrée `model`, `backend` et `frontend`, puis affiche leur état Docker. Sans
+artefact promu, aucun déploiement n'est lancé.
+
 Au départ, seuls `model`, `prometheus` et `grafana` démarrent : à vous
 d'ajouter `backend` + `frontend` et de compléter le reste (cf. TODO).
 

@@ -11,6 +11,10 @@ l'entrée avec le **même schéma Pydantic** que le modèle, appelle le service
 from __future__ import annotations
 
 import os
+import json
+import sqlite3
+from datetime import datetime, timezone
+from pathlib import Path
 
 import httpx
 from fastapi import FastAPI, HTTPException, Request, status
@@ -21,6 +25,7 @@ from prometheus_fastapi_instrumentator import Instrumentator
 from app.middleware import LoggingMiddleware
 from app.schemas import (
     EmploymentApplication,
+    Feedback,
     HealthResponse,
     Prediction,
     TrainRequest,
@@ -30,6 +35,43 @@ from app.schemas import (
 # URL du service model — configurable par variable d'env (dev/staging/prod)
 MODEL_URL = os.environ.get("MODEL_URL", "http://model:8000")
 ALLOWED_ORIGINS = os.environ.get("ALLOWED_ORIGINS", "http://localhost:8088").split(",")
+
+
+def _feedback_db_path() -> Path:
+    return Path(
+        os.environ.get("FEEDBACK_DB", str(Path.cwd() / "data" / "feedbacks.db"))
+    )
+
+
+def _init_feedback_db() -> None:
+    """Create the durable prediction ledger and feedback store."""
+    db_path = _feedback_db_path()
+    db_path.parent.mkdir(parents=True, exist_ok=True)
+    with sqlite3.connect(db_path) as connection:
+        connection.execute(
+            """CREATE TABLE IF NOT EXISTS predictions (
+                request_id TEXT PRIMARY KEY,
+                input_json TEXT NOT NULL,
+                prediction INTEGER NOT NULL,
+                probabilities_json TEXT NOT NULL,
+                model_version TEXT NOT NULL,
+                created_at TEXT NOT NULL
+            )"""
+        )
+        connection.execute(
+            """CREATE TABLE IF NOT EXISTS feedbacks (
+                request_id TEXT PRIMARY KEY,
+                prediction INTEGER NOT NULL,
+                true_label INTEGER NOT NULL,
+                comments TEXT,
+                created_at TEXT NOT NULL,
+                used_for_training INTEGER NOT NULL DEFAULT 0,
+                FOREIGN KEY(request_id) REFERENCES predictions(request_id)
+            )"""
+        )
+
+
+_init_feedback_db()
 
 app = FastAPI(title="Pyrenex Backend Orchestrator", version="1.0.0")
 app.add_middleware(LoggingMiddleware)
@@ -146,7 +188,73 @@ async def score(application: EmploymentApplication, request: Request) -> Predict
     BACKEND_PREDICTION_PROBA.observe(
         prediction.probabilities[str(prediction.prediction)]
     )
+    _init_feedback_db()
+    with sqlite3.connect(_feedback_db_path()) as connection:
+        connection.execute(
+            """INSERT OR IGNORE INTO predictions
+            (request_id, input_json, prediction, probabilities_json,
+             model_version, created_at)
+            VALUES (?, ?, ?, ?, ?, ?)""",
+            (
+                prediction.request_id,
+                json.dumps(application.model_dump(), ensure_ascii=False),
+                prediction.prediction,
+                json.dumps(prediction.probabilities),
+                prediction.model_version,
+                datetime.now(timezone.utc).isoformat(),
+            ),
+        )
     return prediction
+
+
+@app.post("/feedback", status_code=status.HTTP_201_CREATED)
+async def feedback(item: Feedback) -> dict[str, str]:
+    """Store a labelled outcome for a prediction already served by /score."""
+    _init_feedback_db()
+    with sqlite3.connect(_feedback_db_path()) as connection:
+        existing_prediction = connection.execute(
+            "SELECT prediction FROM predictions WHERE request_id = ?",
+            (item.request_id,),
+        ).fetchone()
+        if existing_prediction is None:
+            raise HTTPException(status_code=404, detail="Unknown request_id")
+        if existing_prediction[0] != item.prediction:
+            raise HTTPException(status_code=409, detail="Prediction does not match request_id")
+
+        existing_feedback = connection.execute(
+            "SELECT prediction, true_label FROM feedbacks WHERE request_id = ?",
+            (item.request_id,),
+        ).fetchone()
+        if existing_feedback is not None:
+            if existing_feedback == (item.prediction, item.true_label):
+                return {"status": "already_registered", "request_id": item.request_id}
+            raise HTTPException(status_code=409, detail="Contradictory feedback")
+
+        connection.execute(
+            """INSERT INTO feedbacks
+            (request_id, prediction, true_label, comments, created_at)
+            VALUES (?, ?, ?, ?, ?)""",
+            (
+                item.request_id,
+                item.prediction,
+                item.true_label,
+                item.comments,
+                datetime.now(timezone.utc).isoformat(),
+            ),
+        )
+    return {"status": "stored", "request_id": item.request_id}
+
+
+@app.get("/feedback/count")
+async def feedback_count() -> dict[str, int]:
+    """Return total and not-yet-consumed annotations for the retrain trigger."""
+    _init_feedback_db()
+    with sqlite3.connect(_feedback_db_path()) as connection:
+        total = connection.execute("SELECT COUNT(*) FROM feedbacks").fetchone()[0]
+        new = connection.execute(
+            "SELECT COUNT(*) FROM feedbacks WHERE used_for_training = 0"
+        ).fetchone()[0]
+    return {"count": int(total), "new": int(new)}
 
 
 @app.post("/train", response_model=TrainResponse, status_code=status.HTTP_200_OK)

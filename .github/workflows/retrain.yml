@@ -1,0 +1,48 @@
+name: CISIA feedback retraining
+
+on:
+  workflow_dispatch:
+    inputs:
+      min_feedback:
+        description: Minimum number of unconsumed feedbacks
+        required: false
+        default: "200"
+  schedule:
+    - cron: "0 */6 * * *"
+
+concurrency:
+  group: cisia-feedback-retrain
+  cancel-in-progress: false
+
+jobs:
+  retrain:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install model dependencies
+        run: python -m pip install -r services/model/requirements.txt
+      - name: Run threshold-protected retraining
+        env:
+          MIN_FEEDBACK: ${{ inputs.min_feedback || '200' }}
+        run: |
+          if [ ! -f data/feedbacks.db ]; then
+            echo "No feedback database provided to this runner; retraining skipped."
+            exit 0
+          fi
+          python scripts/retrain.py --min-feedback "$MIN_FEEDBACK" | tee retrain-result.json
+      - name: Upload decision and candidate artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: cisia-retrain-${{ github.run_id }}
+          path: |
+            retrain-result.json
+            decisions_log.jsonl
+            services/model/models/cisia_emploi_candidate.*
+            services/model/models/cisia_emploi_promoted.*
+          if-no-files-found: ignore

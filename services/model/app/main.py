@@ -52,8 +52,13 @@ logger.add(
 # --- Lifespan ---------------------------------------------------------------
 
 MODELS_DIR = Path(__file__).parent.parent / "models"
-MODEL_PATH = MODELS_DIR / "cisia_emploi_xgboost_multimodal_complet_balanced.joblib"
-META_PATH = MODELS_DIR / "cisia_emploi_xgboost_multimodal_complet_balanced.json"
+MODEL_PATH = Path(
+    os.environ.get(
+        "MODEL_ARTIFACT",
+        str(MODELS_DIR / "cisia_emploi_xgboost_multimodal_complet_balanced.joblib"),
+    )
+)
+META_PATH = MODEL_PATH.with_suffix(".json")
 
 
 @asynccontextmanager
@@ -66,7 +71,7 @@ async def lifespan(app: FastAPI):
     MODEL_INFO.labels(
         model_name=app.state.metadata["model_name"],
         model_version=app.state.metadata["model_version"],
-        scenario=app.state.metadata["scenario_name"],
+        scenario=app.state.metadata.get("scenario_name", "multimodal_complet"),
     ).set(1)
     logger.info(
         "Model loaded: {name} {version}",

@@ -47,6 +47,15 @@ class Prediction(BaseModel):
     request_id: str
 
 
+class Feedback(BaseModel):
+    """Validated business label for a prediction already served."""
+
+    request_id: str
+    prediction: int = Field(..., ge=0, le=2)
+    true_label: int = Field(..., ge=0, le=2)
+    comments: str | None = None
+
+
 class HealthResponse(BaseModel):
     """Output schema for /health."""
 
