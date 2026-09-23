@@ -47,8 +47,7 @@ dans l'ordre, avec le bon appui. Les autres supports ont chacun un rôle précis
 
 ### M5-B2 — l'async individuel (jeudi + vendredi matin, 6 h)
 
-Vous repartez **chacun·e** du repo binôme, dans une branche perso
-`<prenom>/m5-b2-eval-continue`. Pas de nouveau repo.
+Vous repartez **chacun·e** du dépôt du binôme. Pas de nouveau dépôt.
 
 | Quand | Étape | Durée | Appui |
 |---|---|---|---|

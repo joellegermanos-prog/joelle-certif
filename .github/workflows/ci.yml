@@ -3,10 +3,10 @@ name: CI/CD CISIA Emploi
 on:
   workflow_dispatch:
   push:
-    branches: [main, joelle]
+    branches: [main]
     tags: ["v*"]
   pull_request:
-    branches: [main, joelle]
+    branches: [main]
 
 jobs:
   lint:

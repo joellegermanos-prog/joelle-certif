@@ -118,7 +118,7 @@ This document lists the functional, integration, resilience and CI/CD tests for 
 | Exact threshold | Run with 200 unconsumed feedbacks. | Verify trigger boundary. | Training starts. |
 | Manual trigger | `./scripts/run_retrain.ps1 -MinFeedback 200`. | Verify operator-triggered retraining. | Retrainer executes. |
 | Scheduled trigger | Run the GitHub Actions `retrain.yml` schedule. | Verify scheduled automation. | Workflow starts and uploads result artifacts. |
-| Workflow dispatch | `gh workflow run retrain.yml --ref main -f min_feedback=200`. | Verify manual CI trigger. | Workflow is accepted and starts. |
+| Workflow dispatch | Run the retraining workflow from the GitHub Actions interface. | Verify manual CI trigger without branch-specific commands. | Workflow is accepted and starts. |
 | Missing CI database | Run workflow without `data/feedbacks.db`. | Make the persistence limitation explicit. | Workflow skips safely with a warning. |
 | Incomplete feedback | Add a prediction with missing CISIA fields. | Prevent malformed training data. | Clear error; feedback is not silently consumed. |
 | Failed training | Force a preprocessing or model error. | Verify transactional behavior. | Feedback remains unconsumed. |
@@ -156,11 +156,11 @@ This document lists the functional, integration, resilience and CI/CD tests for 
 | Test | Command / action | Purpose | Expected result |
 |---|---|---|---|
 | Pull request | Open a PR. | Verify lint, tests, contract test and evaluation. | CI passes for valid changes. |
-| Contract failure | Intentionally break the model contract in a temporary branch. | Verify release protection. | CI fails before image publication. |
-| Quality-gate failure | Run the degraded evaluation path in a test branch. | Verify degraded models cannot be released. | Build/push jobs are blocked. |
+| Contract failure | Intentionally break the model contract in a temporary test change. | Verify release protection. | CI fails before image publication. |
+| Quality-gate failure | Run the degraded evaluation path in a temporary test change. | Verify degraded models cannot be released. | Build/push jobs are blocked. |
 | Main push | Push to `main`. | Verify image build and GHCR publication. | `model`, `backend` and `frontend` images are pushed. |
 | Release tag | Push a `v*` tag. | Verify release publication path. | Images receive the release tag and GitHub Release is created. |
-| Retrain workflow | Run `gh workflow run retrain.yml --ref main -f min_feedback=200`. | Verify remote retrain dispatch. | Workflow is found and starts. |
+| Retrain workflow | Run the retraining workflow from the GitHub Actions interface. | Verify remote retrain dispatch. | Workflow is found and starts. |
 | Artifact upload | Inspect workflow artifacts. | Preserve retrain result and model artifacts. | Logs, decisions and candidates are available. |
 
 ## 13. Resilience and Concurrency
