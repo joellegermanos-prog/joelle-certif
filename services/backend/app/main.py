@@ -15,6 +15,8 @@ import os
 import httpx
 from fastapi import FastAPI, HTTPException, Request, status
 from fastapi.middleware.cors import CORSMiddleware
+from prometheus_client import Counter, Histogram
+from prometheus_fastapi_instrumentator import Instrumentator
 
 from app.middleware import LoggingMiddleware
 from app.schemas import (
@@ -24,10 +26,6 @@ from app.schemas import (
     TrainRequest,
     TrainResponse,
 )
-
-from prometheus_client import Counter, Histogram
-from prometheus_fastapi_instrumentator import Instrumentator
-
 
 # URL du service model — configurable par variable d'env (dev/staging/prod)
 MODEL_URL = os.environ.get("MODEL_URL", "http://model:8000")
@@ -134,7 +132,7 @@ async def score(application: EmploymentApplication, request: Request) -> Predict
 
     try:
         prediction = Prediction(**payload)
-    except Exception as exc:  # noqa: BLE001
+    except Exception as exc:
         MODEL_UPSTREAM_ERRORS_TOTAL.labels(kind="schema_mismatch").inc()
         raise HTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY,

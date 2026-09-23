@@ -1,9 +1,7 @@
 from types import SimpleNamespace
 
-from fastapi.testclient import TestClient
-
 from app.main import app
-
+from fastapi.testclient import TestClient
 
 VALID_APPLICATION = {
     "age": 35,

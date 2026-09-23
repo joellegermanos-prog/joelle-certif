@@ -2,7 +2,6 @@ import json
 import sys
 from pathlib import Path
 
-import pandas as pd
 import joblib
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -10,8 +9,8 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from scripts.evaluate_model import (
-    compute_metrics,
     check_thresholds,
+    compute_metrics,
     load_baseline,
     load_reference_set,
 )

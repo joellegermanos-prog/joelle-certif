@@ -19,6 +19,8 @@ import pandas as pd
 from fastapi import FastAPI, HTTPException, Request, status
 from loguru import logger
 from prometheus_fastapi_instrumentator import Instrumentator
+from sklearn.base import clone
+from sklearn.metrics import accuracy_score, f1_score
 
 from app.metrics import MODEL_INFO, observe_prediction
 from app.middleware import LoggingMiddleware
@@ -31,8 +33,6 @@ from app.schemas import (
     TrainResponse,
 )
 from preprocess import create_features
-from sklearn.base import clone
-from sklearn.metrics import accuracy_score, f1_score
 
 # --- Loguru -----------------------------------------------------------------
 
@@ -127,7 +127,7 @@ async def predict(application: EmploymentApplication, request: Request) -> Predi
         X = create_features(X)
         pred = int(app.state.model.predict(X)[0])
         probabilities = app.state.model.predict_proba(X)[0]
-    except Exception as exc:  # noqa: BLE001 — garde large en production
+    except Exception as exc:
         logger.bind(request_id=request_id).exception("Prediction failed")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
@@ -194,7 +194,7 @@ async def train(request_data: TrainRequest, request: Request) -> TrainResponse:
             model_version=app.state.metadata["model_version"],
             mlflow_run_id=run_id,
         )
-    except Exception as exc:  # noqa: BLE001 - API boundary
+    except Exception as exc:
         logger.bind(request_id=request_id).exception("Training failed")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,

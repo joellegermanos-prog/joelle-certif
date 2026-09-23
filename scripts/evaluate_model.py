@@ -41,7 +41,7 @@ from sklearn.metrics import (
 ROOT = Path(__file__).parent.parent
 SERVICE_ROOT = ROOT / "services" / "model"
 sys.path.insert(0, str(SERVICE_ROOT))
-from preprocess import create_features  # noqa: E402
+from preprocess import create_features
 
 MODELS_DIR = SERVICE_ROOT / "models"
 REFERENCE_SET = ROOT / "data" / "reference_set.csv"
@@ -139,7 +139,7 @@ def freeze_baseline(model, df: pd.DataFrame, meta: dict) -> dict:
             if REFERENCE_SET.exists()
             else "data/dataset_trajectoire_emploi.csv:test_indices"
         ),
-        "n_reference": int(len(df)),
+        "n_reference": len(df),
         "metrics": metrics,
         "target_column": target_col,
         "target_values": meta["target"]["expected_values"],

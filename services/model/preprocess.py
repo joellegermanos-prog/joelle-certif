@@ -32,10 +32,8 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
-import joblib
 import numpy as np
 import pandas as pd
-
 from sklearn.base import BaseEstimator, TransformerMixin
 from sklearn.compose import ColumnTransformer
 from sklearn.feature_extraction.text import TfidfVectorizer
@@ -141,7 +139,7 @@ class TextCleaner(BaseEstimator, TransformerMixin):
         self,
         X: Any,
         y: Any = None,
-    ) -> "TextCleaner":
+    ) -> TextCleaner:
         return self
 
     def transform(self, X: Any) -> pd.Series:
@@ -198,8 +196,7 @@ def extract_department(code_insee: Any) -> str:
         return "INCONNU"
 
     code = str(code_insee).strip().upper()
-    if code.endswith(".0"):
-        code = code[:-2]
+    code = code.removesuffix(".0")
     if not code or code.lower() == "nan":
         return "INCONNU"
 

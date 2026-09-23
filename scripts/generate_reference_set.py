@@ -10,11 +10,10 @@ Sortie :
     data/reference_set.csv
 """
 
-from pathlib import Path
 import json
+from pathlib import Path
 
 import pandas as pd
-
 
 ROOT = Path(__file__).parent.parent
 

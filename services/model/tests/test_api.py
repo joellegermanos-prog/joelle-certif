@@ -1,18 +1,16 @@
 """Tests API + contract test du modèle — service model (fourni)."""
 from __future__ import annotations
 
-import json
+import sys
 from pathlib import Path
 
 import joblib
 import pandas as pd
-import sys
 
 MODELS_DIR = Path(__file__).parent.parent / "models"
 sys.path.insert(0, str(MODELS_DIR.parent))
 
 from preprocess import create_features
-
 
 # --- Tests API --------------------------------------------------------------
 
