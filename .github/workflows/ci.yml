@@ -119,21 +119,12 @@ jobs:
           name: model-image-${{ github.run_id }}
       - name: Load model image
         run: docker load --input model-image.tar
-      - name: Verify GHCR credentials
-        env:
-          GHCR_TOKEN: ${{ secrets.GHCR_TOKEN }}
-        run: |
-          if [ -z "$GHCR_TOKEN" ]; then
-            echo "Missing required Actions secret GHCR_TOKEN (classic PAT with write:packages)."
-            exit 1
-          fi
-
       - name: Log in to GHCR
         uses: docker/login-action@v3
         with:
           registry: ghcr.io
-          username: ${{ github.repository_owner }}
-          password: ${{ secrets.GHCR_TOKEN }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
       - name: Compute image name
         run: |
           REPO_LC=$(echo "${GITHUB_REPOSITORY}" | tr '[:upper:]' '[:lower:]')
