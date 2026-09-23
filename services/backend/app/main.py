@@ -10,8 +10,8 @@ l'entrée avec le **même schéma Pydantic** que le modèle, appelle le service
 """
 from __future__ import annotations
 
-import os
 import json
+import os
 import sqlite3
 from datetime import datetime, timezone
 from pathlib import Path

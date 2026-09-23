@@ -40,16 +40,17 @@ PRODUCTION_METADATA_PATH = MODELS / "cisia_emploi_xgboost_multimodal_complet_bal
 REFERENCE_SET = DATA / "reference_set.csv"
 
 sys.path.insert(0, str(SERVICE_ROOT))
-from preprocess import (  # noqa: E402
+from preprocess import (
     TARGET_COLUMN,
     build_preprocessor,
     create_features,
     load_dataset,
 )
+
 try:  # Supports both `python scripts/retrain.py` and pytest imports.
-    from promotion import decide_promotion  # noqa: E402
+    from promotion import decide_promotion
 except ModuleNotFoundError:  # pragma: no cover - import-mode compatibility
-    from scripts.promotion import decide_promotion  # noqa: E402
+    from scripts.promotion import decide_promotion
 
 # The previous M6 reference implementation used RandomForestClassifier here.
 # It is intentionally left as a comment for traceability; M5 production uses

@@ -67,7 +67,7 @@ def test_feedback_training_data_keeps_cisia_three_class_labels(tmp_path, monkeyp
 
 
 def test_feedback_to_promotion_end_to_end(tmp_path, monkeypatch):
-    import scripts.retrain as retrain
+    from scripts import retrain
 
     db_path = tmp_path / "feedbacks.db"
     monkeypatch.setenv("FEEDBACK_DB", str(db_path))
