@@ -78,7 +78,7 @@ jobs:
           name: mlruns-${{ github.run_id }}
           path: mlruns/
 
-  build-image:
+  build-images:
     needs: model-evaluation
     runs-on: ubuntu-latest
     steps:
@@ -87,24 +87,35 @@ jobs:
       - name: Compute image name
         run: |
           REPO_LC=$(echo "${GITHUB_REPOSITORY}" | tr '[:upper:]' '[:lower:]')
-          echo "IMAGE_NAME=ghcr.io/${REPO_LC}/model" >> "$GITHUB_ENV"
-      - name: Build model image
+          echo "IMAGE_PREFIX=ghcr.io/${REPO_LC}" >> "$GITHUB_ENV"
+      - name: Build service images
         run: |
-          docker build \
-            -t "${IMAGE_NAME}:${GITHUB_SHA}" \
-            -t "${IMAGE_NAME}:latest" \
-            -t "${IMAGE_NAME}:${GITHUB_REF_NAME}" \
-            ./services/model
-          docker save "${IMAGE_NAME}:${GITHUB_SHA}" "${IMAGE_NAME}:latest" "${IMAGE_NAME}:${GITHUB_REF_NAME}" \
-            --output model-image.tar
+          for service in model backend frontend; do
+            docker build \
+              -t "${IMAGE_PREFIX}/${service}:${GITHUB_SHA}" \
+              -t "${IMAGE_PREFIX}/${service}:latest" \
+              -t "${IMAGE_PREFIX}/${service}:${GITHUB_REF_NAME}" \
+              "./services/${service}"
+          done
+          docker save \
+            "${IMAGE_PREFIX}/model:${GITHUB_SHA}" \
+            "${IMAGE_PREFIX}/model:latest" \
+            "${IMAGE_PREFIX}/model:${GITHUB_REF_NAME}" \
+            "${IMAGE_PREFIX}/backend:${GITHUB_SHA}" \
+            "${IMAGE_PREFIX}/backend:latest" \
+            "${IMAGE_PREFIX}/backend:${GITHUB_REF_NAME}" \
+            "${IMAGE_PREFIX}/frontend:${GITHUB_SHA}" \
+            "${IMAGE_PREFIX}/frontend:latest" \
+            "${IMAGE_PREFIX}/frontend:${GITHUB_REF_NAME}" \
+            --output service-images.tar
       - name: Upload image artefact
         uses: actions/upload-artifact@v4
         with:
-          name: model-image-${{ github.run_id }}
-          path: model-image.tar
+          name: service-images-${{ github.run_id }}
+          path: service-images.tar
 
-  push-image:
-    needs: build-image
+  push-images:
+    needs: build-images
     if: >-
       github.event_name == 'push' &&
       (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v'))
@@ -116,9 +127,9 @@ jobs:
       - name: Download image artefact
         uses: actions/download-artifact@v4
         with:
-          name: model-image-${{ github.run_id }}
-      - name: Load model image
-        run: docker load --input model-image.tar
+          name: service-images-${{ github.run_id }}
+      - name: Load service images
+        run: docker load --input service-images.tar
       - name: Log in to GHCR
         uses: docker/login-action@v3
         with:
@@ -128,9 +139,27 @@ jobs:
       - name: Compute image name
         run: |
           REPO_LC=$(echo "${GITHUB_REPOSITORY}" | tr '[:upper:]' '[:lower:]')
-          echo "IMAGE_NAME=ghcr.io/${REPO_LC}/model" >> $GITHUB_ENV
-      - name: Push model image
-        run: docker push --all-tags "${IMAGE_NAME}"
+          echo "IMAGE_PREFIX=ghcr.io/${REPO_LC}" >> "$GITHUB_ENV"
+      - name: Push service images
+        run: |
+          for service in model backend frontend; do
+            docker push --all-tags "${IMAGE_PREFIX}/${service}"
+          done
+
+  release:
+    needs: push-images
+    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Create GitHub release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh release create "${GITHUB_REF_NAME}" --verify-tag --generate-notes
 
   notify-failure:
     needs:
@@ -138,16 +167,18 @@ jobs:
       - tests
       - contract-tests
       - model-evaluation
-      - build-image
-      - push-image
+      - build-images
+      - push-images
+      - release
     if: >-
       always() &&
       (needs.lint.result == 'failure' ||
         needs.tests.result == 'failure' ||
        needs.contract-tests.result == 'failure' ||
        needs.model-evaluation.result == 'failure' ||
-       needs.build-image.result == 'failure' ||
-       needs.push-image.result == 'failure')
+      needs.build-images.result == 'failure' ||
+      needs.push-images.result == 'failure' ||
+      needs.release.result == 'failure')
     runs-on: ubuntu-latest
     steps:
       - name: Validate Discord secret

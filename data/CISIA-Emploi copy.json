@@ -5,10 +5,10 @@
   "tags": ["cisia", "emploi", "prod", "m5"],
   "timezone": "browser",
   "schemaVersion": 39,
-  "version": 4,
+  "version": 2,
   "editable": true,
   "graphTooltip": 1,
-  "refresh": "30s",
+  "refresh": "5s",
   "time": {
     "from": "now-15m",
     "to": "now"
@@ -40,7 +40,6 @@
       ],
       "fieldConfig": {
         "defaults": {
-          "noValue": "Pas de données",
           "mappings": [
             {
               "type": "value",
@@ -101,7 +100,6 @@
       ],
       "fieldConfig": {
         "defaults": {
-          "noValue": "Pas de données",
           "mappings": [
             {
               "type": "value",
@@ -153,7 +151,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "sum(rate(http_requests_total{job=\"model\"}[1m])) or vector(0)",
+          "expr": "sum(rate(http_requests_total{job=\"model\"}[1m]))",
           "datasource": {
             "type": "prometheus",
             "uid": "prometheus"
@@ -162,7 +160,6 @@
       ],
       "fieldConfig": {
         "defaults": {
-          "noValue": "Pas de données",
           "unit": "reqps",
           "min": 0,
           "max": 10,
@@ -204,7 +201,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "sum(rate(http_requests_total{job=\"backend\"}[1m])) or vector(0)",
+          "expr": "sum(rate(http_requests_total{job=\"backend\"}[1m]))",
           "datasource": {
             "type": "prometheus",
             "uid": "prometheus"
@@ -213,7 +210,6 @@
       ],
       "fieldConfig": {
         "defaults": {
-          "noValue": "Pas de données",
           "unit": "reqps",
           "min": 0,
           "max": 10,
@@ -255,17 +251,8 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "sum(rate(http_requests_total{job=\"model\",status=~\"5..\"}[5m])) or vector(0)",
-          "legendFormat": "model",
-          "datasource": {
-            "type": "prometheus",
-            "uid": "prometheus"
-          }
-        },
-        {
-          "refId": "B",
-          "expr": "sum(rate(http_requests_total{job=\"backend\",status=~\"5..\"}[5m])) or vector(0)",
-          "legendFormat": "backend",
+          "expr": "sum(rate(http_requests_total{job=~\"model|backend\",status=~\"5..\"}[5m])) by (job) or vector(0)",
+          "legendFormat": "{{job}}",
           "datasource": {
             "type": "prometheus",
             "uid": "prometheus"
@@ -318,16 +305,15 @@
       ],
       "fieldConfig": {
         "defaults": {
-          "noValue": "Pas de données",
           "unit": "reqps",
           "min": 0,
-          "max": 1,
+          "max": 2,
           "thresholds": {
             "mode": "absolute",
             "steps": [
               { "color": "green", "value": null },
-              { "color": "yellow", "value": 0.05 },
-              { "color": "red", "value": 0.2 }
+              { "color": "yellow", "value": 0.1 },
+              { "color": "red", "value": 0.5 }
             ]
           }
         },
@@ -409,7 +395,7 @@
     {
       "id": 8,
       "type": "gauge",
-      "title": "Vitesse - p95 model instantané",
+      "title": "Vitesse - p95 model instantane",
       "datasource": {
         "type": "prometheus",
         "uid": "prometheus"
@@ -432,7 +418,6 @@
       ],
       "fieldConfig": {
         "defaults": {
-          "noValue": "Pas de données",
           "unit": "s",
           "min": 0,
           "max": 1,
@@ -460,7 +445,7 @@
     {
       "id": 9,
       "type": "timeseries",
-      "title": "Comportement - Répartition des classes prédites",
+      "title": "Comportement - Repartition des classes predites",
       "datasource": {
         "type": "prometheus",
         "uid": "prometheus"
@@ -523,7 +508,7 @@
     {
       "id": 10,
       "type": "gauge",
-      "title": "Comportement - Confiance médiane des prédictions",
+      "title": "Comportement - Confiance mediane des predictions",
       "datasource": {
         "type": "prometheus",
         "uid": "prometheus"
@@ -546,7 +531,6 @@
       ],
       "fieldConfig": {
         "defaults": {
-          "noValue": "Aucune prédiction récente",
           "min": 0,
           "max": 1,
           "unit": "percentunit",
@@ -588,7 +572,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "topk(1, sum(increase(pyrenex_predictions_total[15m])) by (predicted_class)) or label_replace(vector(0), \"predicted_class\", \"aucune\", \"\", \"\")",
+          "expr": "topk(1, sum(increase(pyrenex_predictions_total[15m])) by (predicted_class)) or vector(0)",
           "legendFormat": "classe dominante {{predicted_class}} - 15 min",
           "datasource": {
             "type": "prometheus",
@@ -598,7 +582,6 @@
       ],
       "fieldConfig": {
         "defaults": {
-          "noValue": "Pas de données",
           "unit": "reqps",
           "color": {
             "mode": "background_solid"
@@ -632,290 +615,18 @@
       }
     },
     {
-      "id": 13,
-      "type": "timeseries",
-      "title": "Comportement - Volume de prédictions (total)",
-      "datasource": {
-        "type": "prometheus",
-        "uid": "prometheus"
-      },
-      "gridPos": {
-        "h": 7,
-        "w": 12,
-        "x": 0,
-        "y": 29
-      },
-      "targets": [
-        {
-          "refId": "A",
-          "expr": "sum(rate(pyrenex_predictions_total[5m])) or vector(0)",
-          "legendFormat": "prédictions/s",
-          "datasource": {
-            "type": "prometheus",
-            "uid": "prometheus"
-          }
-        }
-      ],
-      "fieldConfig": {
-        "defaults": {
-          "unit": "reqps",
-          "min": 0,
-          "color": {
-            "mode": "palette-classic"
-          }
-        },
-        "overrides": []
-      },
-      "options": {
-        "legend": {
-          "displayMode": "list",
-          "placement": "bottom"
-        },
-        "tooltip": {
-          "mode": "multi"
-        }
-      }
-    },
-    {
-      "id": 14,
-      "type": "bargauge",
-      "title": "Comportement - Écart à la baseline (% par classe)",
-      "description": "Baseline attendue à ajuster selon la distribution réelle observée à l'entraînement. Seuils par défaut: tolérance ±10 points (jaune), ±20 points (rouge) autour de la baseline.",
-      "datasource": {
-        "type": "prometheus",
-        "uid": "prometheus"
-      },
-      "gridPos": {
-        "h": 7,
-        "w": 12,
-        "x": 12,
-        "y": 29
-      },
-      "targets": [
-        {
-          "refId": "A",
-          "expr": "sum(increase(pyrenex_predictions_total{predicted_class=\"0\"}[15m])) / sum(increase(pyrenex_predictions_total[15m])) or vector(0)",
-          "legendFormat": "Classe 0 - Retour rapide",
-          "datasource": {
-            "type": "prometheus",
-            "uid": "prometheus"
-          }
-        },
-        {
-          "refId": "B",
-          "expr": "sum(increase(pyrenex_predictions_total{predicted_class=\"1\"}[15m])) / sum(increase(pyrenex_predictions_total[15m])) or vector(0)",
-          "legendFormat": "Classe 1 - Retour moyen",
-          "datasource": {
-            "type": "prometheus",
-            "uid": "prometheus"
-          }
-        },
-        {
-          "refId": "C",
-          "expr": "sum(increase(pyrenex_predictions_total{predicted_class=\"2\"}[15m])) / sum(increase(pyrenex_predictions_total[15m])) or vector(0)",
-          "legendFormat": "Classe 2 - Risque longue durée",
-          "datasource": {
-            "type": "prometheus",
-            "uid": "prometheus"
-          }
-        }
-      ],
-      "fieldConfig": {
-        "defaults": {
-          "noValue": "Pas de données",
-          "unit": "percentunit",
-          "min": 0,
-          "max": 1,
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              { "color": "green", "value": null }
-            ]
-          }
-        },
-        "overrides": []
-      },
-      "options": {
-        "reduceOptions": {
-          "values": false,
-          "calcs": ["lastNotNull"],
-          "fields": ""
-        },
-        "orientation": "horizontal",
-        "displayMode": "gradient"
-      }
-    },
-    {
-      "id": 15,
-      "type": "gauge",
-      "title": "Qualité données - Taux de rejet validation",
-      "description": "Nécessite d'exposer preprocessing_validation_rejected_total et preprocessing_validation_requests_total côté service Preprocessing (métrique à instrumenter).",
-      "datasource": {
-        "type": "prometheus",
-        "uid": "prometheus"
-      },
-      "gridPos": {
-        "h": 6,
-        "w": 8,
-        "x": 0,
-        "y": 36
-      },
-      "targets": [
-        {
-          "refId": "A",
-          "expr": "sum(rate(preprocessing_validation_rejected_total[5m])) / sum(rate(preprocessing_validation_requests_total[5m])) or vector(0)",
-          "datasource": {
-            "type": "prometheus",
-            "uid": "prometheus"
-          }
-        }
-      ],
-      "fieldConfig": {
-        "defaults": {
-          "noValue": "Pas de données",
-          "unit": "percentunit",
-          "min": 0,
-          "max": 0.2,
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              { "color": "green", "value": null },
-              { "color": "yellow", "value": 0.02 },
-              { "color": "red", "value": 0.05 }
-            ]
-          }
-        },
-        "overrides": []
-      },
-      "options": {
-        "reduceOptions": {
-          "values": false,
-          "calcs": ["lastNotNull"],
-          "fields": ""
-        },
-        "showThresholdLabels": true,
-        "showThresholdMarkers": true
-      }
-    },
-    {
-      "id": 16,
-      "type": "stat",
-      "title": "Modèle - Temps depuis dernier réentraînement",
-      "description": "Nécessite d'exposer cisia_last_retrain_timestamp_seconds (timestamp Unix du dernier run MLflow) côté API Modèle (métrique à instrumenter).",
-      "datasource": {
-        "type": "prometheus",
-        "uid": "prometheus"
-      },
-      "gridPos": {
-        "h": 6,
-        "w": 8,
-        "x": 8,
-        "y": 36
-      },
-      "targets": [
-        {
-          "refId": "A",
-          "expr": "(time() - max(cisia_last_retrain_timestamp_seconds)) / 3600",
-          "datasource": {
-            "type": "prometheus",
-            "uid": "prometheus"
-          }
-        }
-      ],
-      "fieldConfig": {
-        "defaults": {
-          "noValue": "Aucun réentraînement enregistré",
-          "unit": "h",
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              { "color": "green", "value": null },
-              { "color": "yellow", "value": 168 },
-              { "color": "red", "value": 720 }
-            ]
-          },
-          "color": {
-            "mode": "thresholds"
-          }
-        },
-        "overrides": []
-      },
-      "options": {
-        "reduceOptions": {
-          "values": false,
-          "calcs": ["lastNotNull"],
-          "fields": ""
-        },
-        "orientation": "auto",
-        "textMode": "value",
-        "graphMode": "none",
-        "justifyMode": "center"
-      }
-    },
-    {
-      "id": 17,
-      "type": "gauge",
-      "title": "Modèle - Score d'évaluation vs seuil gate CI",
-      "description": "Nécessite d'exposer cisia_last_eval_score (score du dernier golden run) côté API Modèle. Seuil (0.75 par défaut) à aligner sur les seuils réels de scripts/evaluate_model.py.",
-      "datasource": {
-        "type": "prometheus",
-        "uid": "prometheus"
-      },
-      "gridPos": {
-        "h": 6,
-        "w": 8,
-        "x": 16,
-        "y": 36
-      },
-      "targets": [
-        {
-          "refId": "A",
-          "expr": "max(cisia_last_eval_score)",
-          "datasource": {
-            "type": "prometheus",
-            "uid": "prometheus"
-          }
-        }
-      ],
-      "fieldConfig": {
-        "defaults": {
-          "noValue": "Pas de données",
-          "unit": "percentunit",
-          "min": 0,
-          "max": 1,
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              { "color": "red", "value": null },
-              { "color": "green", "value": 0.75 }
-            ]
-          }
-        },
-        "overrides": []
-      },
-      "options": {
-        "reduceOptions": {
-          "values": false,
-          "calcs": ["lastNotNull"],
-          "fields": ""
-        },
-        "showThresholdLabels": true,
-        "showThresholdMarkers": true
-      }
-    },
-    {
       "id": 12,
       "type": "stat",
-      "title": "Modèle déployé",
+      "title": "Modele deploye",
       "datasource": {
         "type": "prometheus",
         "uid": "prometheus"
       },
       "gridPos": {
         "h": 6,
-        "w": 24,
+        "w": 12,
         "x": 0,
-        "y": 42
+        "y": 29
       },
       "targets": [
         {
@@ -930,7 +641,6 @@
       ],
       "fieldConfig": {
         "defaults": {
-          "noValue": "Aucun modèle rapporté",
           "unit": "short",
           "color": {
             "mode": "fixed",

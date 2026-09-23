@@ -20,7 +20,7 @@ from fastapi import FastAPI, HTTPException, Request, status
 from loguru import logger
 from prometheus_fastapi_instrumentator import Instrumentator
 from sklearn.base import clone
-from sklearn.metrics import accuracy_score, f1_score
+from sklearn.metrics import accuracy_score, f1_score, precision_score, recall_score
 
 from app.metrics import MODEL_INFO, observe_prediction
 from app.middleware import LoggingMiddleware
@@ -179,6 +179,26 @@ async def train(request_data: TrainRequest, request: Request) -> TrainResponse:
             mlflow.log_param("rows", len(frame))
             mlflow.log_metric("train_accuracy", float(accuracy_score(target, predictions)))
             mlflow.log_metric("train_f1_macro", float(f1_score(target, predictions, average="macro")))
+            mlflow.log_metric(
+                "train_precision_macro",
+                float(precision_score(target, predictions, average="macro", zero_division=0)),
+            )
+            mlflow.log_metric(
+                "train_recall_macro",
+                float(recall_score(target, predictions, average="macro", zero_division=0)),
+            )
+            mlflow.log_metric(
+                "train_f1_classe_2",
+                float(
+                    f1_score(
+                        target,
+                        predictions,
+                        labels=[2],
+                        average=None,
+                        zero_division=0,
+                    )[0]
+                ),
+            )
             mlflow.set_tag("request_id", request_id)
             mlflow.set_tag("model_type", type(candidate).__name__)
             run_id = run.info.run_id
