@@ -240,6 +240,12 @@ Les feedbacks sont conservés dans le volume Docker `feedback_data`. Le
 retrainer partage ce volume avec le backend et applique le seuil de 200
 feedbacks non consommés :
 
+Initialiser uniquement le schéma SQLite, sans générer de faux feedbacks :
+
+```powershell
+python scripts/init_feedback_db.py
+```
+
 ```powershell
 ./scripts/run_retrain.ps1
 ./scripts/run_retrain.ps1 -MinFeedback 1
