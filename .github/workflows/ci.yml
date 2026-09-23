@@ -9,91 +9,113 @@ on:
     branches: [main, joelle]
 
 jobs:
-  test:
+  lint:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
           python-version: "3.11"
-      - name: Install model deps
+      - name: Install lint tools
+        run: pip install ruff
+      - name: Run Ruff
+        run: ruff check services scripts tests
+
+  unit-tests:
+    needs: lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install test dependencies
         run: pip install -r services/model/requirements.txt pytest httpx
-      - name: Tests unitaires + contract test du modèle
-        run: pytest -v services/model/tests
+      - name: Run unit tests
+        run: >-
+          pytest -v services/model/tests
+          -k "train_requires_at_least_ten_records or train_rejects_invalid_token or train_returns_mlflow_run"
 
-  backend-tests:
-    needs: test
+  api-tests:
+    needs: unit-tests
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
           python-version: "3.11"
-      - name: Install backend dependencies
-        run: pip install -r services/backend/requirements.txt pytest httpx
-      - name: Tests API backend
-        run: pytest -v services/backend/tests
+      - name: Install API dependencies
+        run: pip install -r services/model/requirements.txt -r services/backend/requirements.txt pytest httpx
+      - name: Run model API tests
+        run: >-
+          pytest -v services/model/tests
+          -k "health_ok or predict_valid_returns_class_and_proba or predict_invalid_returns_422 or metrics_endpoint_exposes_prometheus"
+      - name: Run backend API tests
+        run: >-
+          pytest -v services/backend/tests
+          -k "score_calls_model_and_returns_prediction or train_validates_minimum_records"
 
-  evaluation-tests:
-    needs: test
+  contract-tests:
+    needs: api-tests
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
           python-version: "3.11"
-      - name: Install evaluation deps
+      - name: Install contract-test dependencies
+        run: pip install -r services/model/requirements.txt pytest
+      - name: Run model contract test
+        run: pytest -v services/model/tests/test_api.py -k test_model_contract_features_and_output
+
+  model-evaluation:
+    needs: contract-tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install evaluation dependencies
         run: pip install -r requirements-dev.txt
-      - name: Tests d'évaluation du modèle (golden run + seuils)
+      - name: Run evaluation tests
         run: pytest -v tests/test_evaluation.py
-
-  evaluate-model:
-    needs:
-      - backend-tests
-      - evaluation-tests
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
-        with:
-          python-version: "3.11"
-      - name: Install eval deps
-        run: pip install -r requirements-dev.txt
-      - name: Évaluer le modèle vs seuils (golden run)
+      - name: Run model quality gate
         run: python scripts/evaluate_model.py --release-tag ${{ github.ref_name }}
-      - name: Ensure MLflow tracking directory exists
-        if: always()
-        run: |
-          mkdir -p mlruns
-          ls -la
-          ls -la mlruns || true
-      - name: Upload mlruns (artefact de traçabilité)
+      - name: Upload MLflow artefact
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: mlruns-${{ github.run_id }}
           path: mlruns/
 
-  ####### optional ########
-  #build:
-  #  needs: evaluate-model
-  #  if: github.event_name == 'push'
-  #  runs-on: ubuntu-latest
-  #  steps:
-  #    - uses: actions/checkout@v4
-  #    - name: Package model artifact
-  #      run: |
-  #        mkdir -p dist
-  #        cp -r services/model dist/
-  #        tar -czf model-package-${{ github.sha }}.tgz dist
-  #    - name: Upload packaged artifact
-  #      uses: actions/upload-artifact@v4
-  #      with:
-  #        name: model-package-${{ github.sha }}
-  #        path: model-package-${{ github.sha }}.tgz
+  build-image:
+    needs: model-evaluation
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - name: Compute image name
+        run: |
+          REPO_LC=$(echo "${GITHUB_REPOSITORY}" | tr '[:upper:]' '[:lower:]')
+          echo "IMAGE_NAME=ghcr.io/${REPO_LC}/model" >> "$GITHUB_ENV"
+      - name: Build model image
+        run: |
+          docker build \
+            -t "${IMAGE_NAME}:${GITHUB_SHA}" \
+            -t "${IMAGE_NAME}:latest" \
+            -t "${IMAGE_NAME}:${GITHUB_REF_NAME}" \
+            ./services/model
+          docker save "${IMAGE_NAME}:${GITHUB_SHA}" "${IMAGE_NAME}:latest" "${IMAGE_NAME}:${GITHUB_REF_NAME}" \
+            --output model-image.tar
+      - name: Upload image artefact
+        uses: actions/upload-artifact@v4
+        with:
+          name: model-image-${{ github.run_id }}
+          path: model-image.tar
 
-  build-and-push:
-    needs: evaluate-model
+  push-image:
+    needs: build-image
     if: >-
       github.event_name == 'push' &&
       (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v'))
@@ -101,13 +123,13 @@ jobs:
     permissions:
       contents: read
       packages: write
-
     steps:
-      - uses: actions/checkout@v4
-
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
-
+      - name: Download image artefact
+        uses: actions/download-artifact@v4
+        with:
+          name: model-image-${{ github.run_id }}
+      - name: Load model image
+        run: docker load --input model-image.tar
       - name: Verify GHCR credentials
         env:
           GHCR_TOKEN: ${{ secrets.GHCR_TOKEN }}
@@ -123,38 +145,31 @@ jobs:
           registry: ghcr.io
           username: ${{ github.repository_owner }}
           password: ${{ secrets.GHCR_TOKEN }}
-
-      - name: Compute lowercase image name
+      - name: Compute image name
         run: |
           REPO_LC=$(echo "${GITHUB_REPOSITORY}" | tr '[:upper:]' '[:lower:]')
           echo "IMAGE_NAME=ghcr.io/${REPO_LC}/model" >> $GITHUB_ENV
-
-      - name: Build model image
-        run: |
-          docker build \
-            -t "${IMAGE_NAME}:${GITHUB_SHA}" \
-            -t "${IMAGE_NAME}:latest" \
-            -t "${IMAGE_NAME}:${GITHUB_REF_NAME}" \
-            ./services/model
-
       - name: Push model image
-        run: |
-          docker push --all-tags "${IMAGE_NAME}"
-####### Webhook #######
+        run: docker push --all-tags "${IMAGE_NAME}"
+
   notify-failure:
     needs:
-      - test
-      - backend-tests
-      - evaluation-tests
-      - evaluate-model
-      - build-and-push
+      - lint
+      - unit-tests
+      - api-tests
+      - contract-tests
+      - model-evaluation
+      - build-image
+      - push-image
     if: >-
       always() &&
-      (needs.test.result == 'failure' ||
-       needs.backend-tests.result == 'failure' ||
-       needs.evaluation-tests.result == 'failure' ||
-       needs.evaluate-model.result == 'failure' ||
-       needs.build-and-push.result == 'failure')
+      (needs.lint.result == 'failure' ||
+       needs.unit-tests.result == 'failure' ||
+       needs.api-tests.result == 'failure' ||
+       needs.contract-tests.result == 'failure' ||
+       needs.model-evaluation.result == 'failure' ||
+       needs.build-image.result == 'failure' ||
+       needs.push-image.result == 'failure')
     runs-on: ubuntu-latest
     steps:
       - name: Validate Discord secret
