@@ -258,10 +258,11 @@ Sous Linux ou via cron :
 ```
 
 Le workflow [retrain.yml](.github/workflows/retrain.yml) ajoute un lancement
-planifié toutes les six heures et un lancement manuel. Un runner GitHub
-hébergé n'a pas accès au volume Docker local : il faut donc lui fournir une
-copie persistante de `feedbacks.db`, ou exécuter le trigger Compose sur la
-machine qui héberge la base de production.
+planifié toutes les six heures et un lancement manuel. Il se connecte par SSH
+à l'hôte de déploiement puis lance le service Compose `retrainer`, qui partage
+le volume persistant `feedback_data` avec le backend. Configurez les secrets
+`DEPLOY_HOST`, `DEPLOY_USER`, `DEPLOY_SSH_KEY` et `DEPLOY_PATH`; l'image
+`retrainer` est publiée sur GHCR avec les autres services.
 
 Après une décision `promoted`, le modèle promu peut être déployé localement :
 

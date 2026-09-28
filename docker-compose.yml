@@ -132,6 +132,7 @@ services:
 
   retrainer:
     profiles: ["retrain"]
+    image: "${IMAGE_PREFIX:-cisia-emploi}/retrainer:${IMAGE_TAG:-latest}"
     build:
       context: .
       dockerfile: services/retrainer/Dockerfile
