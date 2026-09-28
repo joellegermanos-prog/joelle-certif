@@ -18,10 +18,12 @@ VALID_APPLICATION = {
 }
 
 
-def test_score_calls_model_and_returns_prediction(monkeypatch):
+def test_score_calls_model_and_returns_prediction(monkeypatch, tmp_path):
+    monkeypatch.setenv("FEEDBACK_DB", str(tmp_path / "feedbacks.db"))
+
     async def fake_post(self, url, json, headers=None):
         assert url.endswith("/predict")
-        assert headers["X-Request-ID"]
+        assert headers["X-Request-ID"] in {"req-123", "req-124"}
         return SimpleNamespace(
             status_code=200,
             json=lambda: {
@@ -37,13 +39,25 @@ def test_score_calls_model_and_returns_prediction(monkeypatch):
     monkeypatch.setattr("httpx.AsyncClient.post", fake_post)
 
     client = TestClient(app)
-    response = client.post("/score", json=VALID_APPLICATION, headers={"X-Request-ID": "req-123"})
+    application = {**VALID_APPLICATION, "session_id": "session-123"}
+    response = client.post("/score", json=application, headers={"X-Request-ID": "req-123"})
 
     assert response.status_code == 200
     payload = response.json()
     assert payload["prediction"] == 1
     assert payload["probabilities"]["1"] == 0.42
-    assert payload["request_id"] == "req-123"
+    assert payload["request_id"] == "REQ00001"
+    assert payload["session_id"] == "session-123"
+
+    second_response = client.post(
+        "/score", json=application, headers={"X-Request-ID": "req-124"}
+    )
+    assert second_response.status_code == 200
+    assert second_response.json()["request_id"] == "REQ00002"
+    assert second_response.json()["session_id"] == "session-123"
+
+    history = client.get("/history?session_id=session-123")
+    assert {entry["request_id"] for entry in history.json()} == {"REQ00001", "REQ00002"}
 
     def test_score_persists_session_and_history(monkeypatch):
         async def fake_post(self, url, json, headers=None):

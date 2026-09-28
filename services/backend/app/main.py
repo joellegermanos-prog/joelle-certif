@@ -41,6 +41,12 @@ ALLOWED_ORIGINS = os.environ.get("ALLOWED_ORIGINS", "http://localhost:8088").spl
 DRIFT_METRICS_FILE = Path(
     os.environ.get("DRIFT_METRICS_FILE", "/app/reports/drift.prom")
 )
+HISTORY_EXCLUDED_INPUT_FIELDS = {
+    "usager_id",
+    "session_id",
+    "age",
+    "nationalite_hors_ue",
+}
 
 
 def _feedback_db_path() -> Path:
@@ -84,6 +90,27 @@ def _init_feedback_db() -> None:
                 FOREIGN KEY(request_id) REFERENCES predictions(request_id)
             )"""
         )
+        connection.execute(
+            """CREATE TABLE IF NOT EXISTS request_id_sequence (
+                id INTEGER PRIMARY KEY AUTOINCREMENT
+            )"""
+        )
+
+
+def _next_request_id() -> str:
+    """Allocate a persistent identifier for one scoring request."""
+    _init_feedback_db()
+    with sqlite3.connect(_feedback_db_path()) as connection:
+        cursor = connection.execute("INSERT INTO request_id_sequence DEFAULT VALUES")
+        request_number = int(cursor.lastrowid)
+        request_id = f"REQ{request_number:05d}"
+        while connection.execute(
+            "SELECT 1 FROM predictions WHERE request_id = ?", (request_id,)
+        ).fetchone():
+            cursor = connection.execute("INSERT INTO request_id_sequence DEFAULT VALUES")
+            request_number = int(cursor.lastrowid)
+            request_id = f"REQ{request_number:05d}"
+        return request_id
 
 
 _init_feedback_db()
@@ -163,7 +190,7 @@ async def health() -> HealthResponse:
 @app.post("/score", response_model=Prediction, status_code=status.HTTP_200_OK)
 async def score(application: EmploymentApplication, request: Request) -> Prediction:
     """Valide la demande, l'envoie au modèle et renvoie le résultat."""
-    request_id = getattr(request.state, "request_id", request.headers.get("X-Request-ID", "n/a"))
+    trace_id = getattr(request.state, "request_id", request.headers.get("X-Request-ID", "n/a"))
     session_id = application.session_id or request.headers.get("X-Session-ID") or str(uuid4())
 
     if application.usager_id and os.environ.get("USER_REGISTRY_URL"):
@@ -175,13 +202,14 @@ async def score(application: EmploymentApplication, request: Request) -> Predict
                 detail=f"User registry unavailable: {exc}",
             ) from exc
 
+    request_id = _next_request_id()
     try:
         async with httpx.AsyncClient(timeout=10.0) as client:
             with MODEL_CALL_DURATION_SECONDS.time():
                 response = await client.post(
                     f"{MODEL_URL.rstrip('/')}/predict",
                     json=application.model_dump(exclude={"usager_id", "session_id"}),
-                    headers={"X-Request-ID": request_id, "X-Session-ID": session_id},
+                    headers={"X-Request-ID": trace_id, "X-Session-ID": session_id},
                 )
     except httpx.RequestError as exc:
         MODEL_UPSTREAM_ERRORS_TOTAL.labels(kind="unreachable").inc()
@@ -237,7 +265,10 @@ async def score(application: EmploymentApplication, request: Request) -> Predict
                 prediction.request_id,
                 application.usager_id,
                 session_id,
-                json.dumps(application.model_dump(), ensure_ascii=False),
+                json.dumps(
+                    application.model_dump(exclude=HISTORY_EXCLUDED_INPUT_FIELDS),
+                    ensure_ascii=False,
+                ),
                 prediction.prediction,
                 json.dumps(prediction.probabilities),
                 prediction.model_version,
@@ -287,7 +318,7 @@ async def history(
             "inputs": {
                 key: value
                 for key, value in json.loads(row[8]).items()
-                if key not in {"usager_id", "session_id"}
+                if key not in HISTORY_EXCLUDED_INPUT_FIELDS
             },
             "comments": row[9],
         }

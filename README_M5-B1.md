@@ -4,21 +4,19 @@
 
 ```mermaid
 flowchart LR
-    User(["Navigateur"]) -->|"8088"| Frontend["frontend (nginx)"]
-    Frontend -->|"/api/*"| Backend["backend (FastAPI :8001)"]
-    Backend -->|"POST /predict"| Model["model (FastAPI :8000)"]
+    Sources["Sources de données<br/>CSV dans data/"] --> Preprocessing["Préprocessing<br/>services/model/preprocess.py"]
+    Preprocessing --> Training["Entraînement et évaluation<br/>scripts/retrain.py"]
+    Training --> Artifact[("Modèle validé<br/>.joblib + métadonnées")]
+    Artifact -->|"chargement au démarrage"| Model["API modèle<br/>FastAPI :8000<br/>POST /predict"]
+
+    Frontend["UI conseiller<br/>Nginx :8088"] -->|"POST /api/score"| Backend["API backend<br/>FastAPI :8001<br/>POST /score"]
+    Backend -->|"POST /predict"| Model
+    Model -->|"classe, probabilités,<br/>version et request_id"| Backend
+    Backend -->|"résultat du scoring"| Frontend
 
     Prometheus["Prometheus :9090"] -->|"scrape /metrics"| Backend
     Prometheus -->|"scrape /metrics"| Model
-    Grafana["Grafana :3001"] -->|"query"| Prometheus
-
-    subgraph Docker Compose
-        Frontend
-        Backend
-        Model
-        Prometheus
-        Grafana
-    end
+    Grafana["Grafana :3001"] -->|"requêtes de visualisation"| Prometheus
 ```
 
 ## 🚀 3 commandes pour démarrer

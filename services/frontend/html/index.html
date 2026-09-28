@@ -241,8 +241,7 @@
     const toggleHistory = document.getElementById('toggleHistory');
     const historyScope = document.getElementById('historyScope');
     const labels = { 0: 'Retour rapide', 1: 'Retour moyen', 2: 'Risque de chômage longue durée' };
-    const sessionId = localStorage.getItem('cisia_session_id') || crypto.randomUUID();
-    localStorage.setItem('cisia_session_id', sessionId);
+    const sessionId = crypto.randomUUID();
     sessionInfo.textContent = `Session conseiller : ${sessionId}`;
     let scoredRequestId = null;
     let scoredPrediction = null;
@@ -390,7 +389,7 @@
         const probabilities = Object.entries(body.probabilities)
           .map(([key, value]) => `${labels[key]} : ${(value * 100).toFixed(1)}%`)
           .join(' | ');
-        result.textContent = `${labels[body.prediction]} - ${probabilities} (modèle ${body.model_version})`;
+        result.textContent = `${labels[body.prediction]} - ${probabilities} (modèle ${body.model_version}) - Request ID : ${body.request_id}`;
         result.className = body.prediction === 2 ? 'ko' : 'ok';
         loadHistory().catch(() => {});
       } catch (error) {
