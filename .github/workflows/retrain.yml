@@ -44,3 +44,4 @@ jobs:
             services/model/models/cisia_emploi_candidate.*
             services/model/models/cisia_emploi_promoted.*
           if-no-files-found: ignore
+          retention-days: 1
