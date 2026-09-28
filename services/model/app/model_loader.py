@@ -1,4 +1,4 @@
-"""Single source of truth for loading the Pyrenex risk model.
+"""Single source of truth for loading the CISIA-Emploi model.
 
 Used by three independent consumers:
 - ``app.main.lifespan``     — boot the API (long-running uvicorn process)
@@ -16,16 +16,16 @@ from typing import Any
 
 import joblib
 
-MODEL_FILENAME = "pyrenex_risk_v2.joblib"
-METADATA_FILENAME = "pyrenex_risk_v2.json"
+MODEL_FILENAME = "cisia_emploi_xgboost_multimodal_ethique_best_class_2_ethique.joblib"
+METADATA_FILENAME = "cisia_emploi_xgboost_multimodal_ethique_best_class_2_ethique.json"
 
 
 def load_model_and_metadata(models_dir: Path) -> tuple[Any, dict]:
-    """Load the Pyrenex risk model and its metadata from a models directory.
+    """Load the CISIA-Emploi model and its metadata from a models directory.
 
     Args:
-        models_dir: Directory containing ``pyrenex_risk_v2.joblib`` and
-            ``pyrenex_risk_v2.json``.
+        models_dir: Directory containing ``MODEL_FILENAME`` and
+            ``METADATA_FILENAME``.
 
     Returns:
         A ``(model, metadata)`` tuple where ``model`` is a fitted

@@ -1,6 +1,6 @@
-"""Pydantic schemas for the Pyrenex Risk API — fourni.
+"""Pydantic schemas for the CISIA-Emploi API — fourni.
 
-Aligned with feature_columns from pyrenex_risk_v2.json (M1-B1 correctif).
+Aligned with feature_columns from the CISIA-Emploi model metadata.
 """
 from __future__ import annotations
 
@@ -12,12 +12,12 @@ from pydantic import BaseModel, Field
 class EmploymentApplication(BaseModel):
     """Input schema for the CISIA employment-return model."""
 
-    age: float = Field(..., ge=16, le=100)
+    age: float | None = Field(default=None, ge=16, le=100)
     niveau_diplome: Literal["Sans diplôme", "Bac", "Bac+2", "Bac+5"]
     anciennete_poste_ans: float = Field(..., ge=0)
     code_rome_vise: str
     est_allocataire: Literal[0, 1] = 0
-    nationalite_hors_ue: Literal[0, 1] = 0
+    nationalite_hors_ue: Literal[0, 1] | None = None
     code_insee_commune: str
     synthese_entretien: str
 

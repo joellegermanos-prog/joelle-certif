@@ -76,4 +76,23 @@ ne pas “ajuster” les seuils pour faire passer le dashboard, ni contourné le
 
 **On NE fait PAS** : ne pas bricoler en prod, ne pas faire un “fix rapide” sans validation, et ne pas supprimer les volumes ni des données de production. Le rollback doit être simple, documenté et réversible.
 
+---
+
+## 5. Drift des données ou des probabilités
+
+**Déclenchement** : le panel « Drift » affiche un PSI supérieur ou égal à
+`0,25`, une p-value KS/Chi² inférieure à `0,05`, ou le statut « À INVESTIGUER ».
+
+**Actions** :
+1. Régénérer `reports/drift.prom` avec `scripts/drift_analysis.py` sur une
+	fenêtre de référence et une fenêtre courante comparables.
+2. Vérifier le contexte métier, la période, les modalités nouvelles et la
+	qualité des labels avant toute décision de réentraînement.
+3. Comparer les probabilités, les classes prédites et les métriques live dans
+	Grafana.
+4. Lancer une évaluation sur le jeu de référence avant toute promotion.
+
+**On NE fait PAS** : ne pas modifier les seuils pour masquer une alerte et ne
+pas promouvoir un modèle sur la seule base d'un PSI élevé.
+
 

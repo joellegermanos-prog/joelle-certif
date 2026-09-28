@@ -10,7 +10,6 @@ from app.main import app
 from fastapi.testclient import TestClient
 
 VALID_APPLICATION = {
-    "age": 35,
     "niveau_diplome": "Bac+2",
     "anciennete_poste_ans": 3.0,
     "code_rome_vise": "M1805",
@@ -45,6 +44,37 @@ def test_score_calls_model_and_returns_prediction(monkeypatch):
     assert payload["prediction"] == 1
     assert payload["probabilities"]["1"] == 0.42
     assert payload["request_id"] == "req-123"
+
+    def test_score_persists_session_and_history(monkeypatch):
+        async def fake_post(self, url, json, headers=None):
+            return SimpleNamespace(
+                status_code=200,
+                json=lambda: {
+                    "prediction": 0,
+                    "prediction_label": "Retour rapide",
+                    "probabilities": {"0": 0.8, "1": 0.1, "2": 0.1},
+                    "model_version": "v-history",
+                    "request_id": headers["X-Request-ID"],
+                },
+                text="ok",
+            )
+
+        monkeypatch.setattr("httpx.AsyncClient.post", fake_post)
+        client = TestClient(app)
+        response = client.post(
+            "/score",
+            json={
+                **VALID_APPLICATION,
+                "usager_id": "user-history",
+                "session_id": "session-history",
+            },
+        )
+
+        assert response.status_code == 200
+        assert response.json()["session_id"] == "session-history"
+        history = client.get("/history?session_id=session-history")
+        assert history.status_code == 200
+        assert history.json()[0]["usager_id"] == "user-history"
 
 
 def test_train_validates_minimum_records():

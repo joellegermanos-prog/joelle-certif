@@ -27,14 +27,20 @@ def test_predict_valid_returns_class_and_proba(client, valid_payload):
     assert body["prediction"] in (0, 1, 2)
     assert set(body["probabilities"]) == {"0", "1", "2"}
     assert abs(sum(body["probabilities"].values()) - 1.0) < 0.001
-    assert body["model_version"] == "v1.0.0"
+    assert body["model_version"] == client.app.state.metadata["model_version"]
 
 
 def test_predict_invalid_returns_422(client, valid_payload):
     bad = dict(valid_payload)
-    bad["age"] = 999  # hors bornes (16-100)
+    bad["anciennete_poste_ans"] = -1  # ancienneté négative interdite
     resp = client.post("/predict", json=bad)
     assert resp.status_code == 422
+
+
+def test_predict_does_not_require_age(client, valid_payload):
+    assert "age" not in valid_payload
+    resp = client.post("/predict", json=valid_payload)
+    assert resp.status_code == 200
 
 
 def test_train_requires_at_least_ten_records(client, valid_payload):
@@ -52,13 +58,23 @@ def test_train_rejects_invalid_token(client, valid_payload, monkeypatch):
     assert resp.status_code == 403
 
 
+def test_train_is_disabled_by_default(client, valid_payload, monkeypatch):
+    monkeypatch.delenv("TRAIN_API_TOKEN", raising=False)
+    monkeypatch.delenv("ALLOW_DIRECT_TRAIN", raising=False)
+    record = dict(valid_payload)
+    record["classe_retour_emploi"] = 0
+    resp = client.post("/train", json={"records": [record] * 10})
+    assert resp.status_code == 409
+
+
 def test_train_returns_mlflow_run(client, valid_payload, monkeypatch, tmp_path):
     monkeypatch.delenv("TRAIN_API_TOKEN", raising=False)
+    monkeypatch.setenv("ALLOW_DIRECT_TRAIN", "true")
     monkeypatch.setenv("MLFLOW_TRACKING_URI", f"file:{tmp_path / 'mlruns'}")
     records = []
     for index in range(12):
         record = dict(valid_payload)
-        record["age"] = 25 + index
+        record["anciennete_poste_ans"] = float(index)
         record["classe_retour_emploi"] = index % 3
         records.append(record)
 
@@ -75,7 +91,7 @@ def test_metrics_endpoint_exposes_prometheus(client, valid_payload):
     client.post("/predict", json=valid_payload)  # génère au moins 1 observation
     resp = client.get("/metrics")
     assert resp.status_code == 200
-    assert "pyrenex_predictions_total" in resp.text
+    assert "cisia_emploi_predictions_total" in resp.text
     assert "cisia_model_info" in resp.text
 
 
@@ -84,16 +100,14 @@ def test_metrics_endpoint_exposes_prometheus(client, valid_payload):
 def test_model_contract_features_and_output():
     """Le pipeline CISIA accepte le schéma emploi et sort trois probabilités."""
     model = joblib.load(
-        MODELS_DIR / "cisia_emploi_xgboost_multimodal_complet_balanced.joblib"
+        MODELS_DIR / "cisia_emploi_xgboost_multimodal_ethique_best_class_2_ethique.joblib"
     )
     row = {
-        "age": 35,
         "niveau_diplome": "Bac+2",
         "anciennete_poste_ans": 3.0,
         "code_rome_vise": "M1805",
         "code_insee_commune": "75056",
         "est_allocataire": 0,
-        "nationalite_hors_ue": 0,
         "synthese_entretien": (
             "Recherche un emploi stable dans le domaine informatique."
         ),

@@ -60,8 +60,8 @@ RAW_REQUIRED_COLUMNS: list[str] = [
     "anciennete_poste_ans",
     "code_rome_vise",
     "code_insee_commune",
-    #"est_allocataire",
-    #"nationalite_hors_ue",
+    "est_allocataire",
+    "nationalite_hors_ue",
     "synthese_entretien",
     TARGET_COLUMN,
 ]
@@ -92,7 +92,7 @@ ORDINAL_FEATURES: dict[str, list[str]] = {
 BASE_CATEGORICAL_FEATURES: list[str] = [
     "code_rome_vise",
     "departement",
-    #"est_allocataire",
+    "est_allocataire",
 ]
 
 # Variables sensibles à partir du diagnostic éthique du notebook.
@@ -100,17 +100,28 @@ BASE_CATEGORICAL_FEATURES: list[str] = [
 # Le niveau de diplôme n'est pas une variable sensible au sens RGPD,
 # et le département est un proxy géographique à traiter séparément.
 SENSITIVE_FEATURES: list[str] = [
+    "nationalite_hors_ue",
     "age",
-    #"nationalite_hors_ue",
 ]
 
 # Proxy géographique, à considérer séparément de la sensibilité stricte.
 PROXY_FEATURES: list[str] = [
     "departement",
+    "niveau_diplome",
 ]
 
 # Colonne textuelle.
 TEXT_FEATURE: str = "synthese_entretien"
+
+# Mots-outils français sans valeur métier.
+# Les négations sont conservées volontairement.
+FRENCH_STOP_WORDS = [
+    "a", "afin", "ainsi", "au", "aux", "avec", "ce", "ces", "cet", "cette",
+    "comme", "dans", "de", "des", "du", "elle", "elles", "en", "est", "et",
+    "il", "ils", "je", "la", "le", "les", "leur", "leurs", "lui", "mais",
+    "mes", "mon", "nous", "on", "ou", "par", "pour", "que", "qui", "sa",
+    "se", "ses", "son", "sur", "tu", "un", "une", "vos", "votre", "vous",
+]
 
 
 # =============================================================================
@@ -585,7 +596,7 @@ def build_categorical_pipeline() -> Pipeline:
 
 def build_text_pipeline(
     max_features: int = 1_000,
-    ngram_range: tuple[int, int] = (1, 2),
+    ngram_range: tuple[int, int] = (2, 3),
     min_df: int = 2,
 ) -> Pipeline:
     """
@@ -613,6 +624,7 @@ def build_text_pipeline(
                 TfidfVectorizer(
                     lowercase=True,
                     strip_accents="unicode",
+                    stop_words=FRENCH_STOP_WORDS,
                     max_features=max_features,
                     ngram_range=ngram_range,
                     min_df=min_df,
@@ -628,7 +640,7 @@ def build_preprocessor(
     include_sensitive: bool = True,
     include_text: bool = True,
     tfidf_max_features: int = 1_000,
-    tfidf_ngram_range: tuple[int, int] = (1, 2),
+    tfidf_ngram_range: tuple[int, int] = (2, 3),
     tfidf_min_df: int = 2,
 ) -> ColumnTransformer:
     """

@@ -24,6 +24,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import sys
 from pathlib import Path
 
@@ -47,7 +48,7 @@ MODELS_DIR = SERVICE_ROOT / "models"
 REFERENCE_SET = ROOT / "data" / "reference_set.csv"
 REFERENCE_BASELINE = ROOT / "data" / "reference_baseline.json"
 SOURCE_DATASET = ROOT / "data" / "dataset_trajectoire_emploi.csv"
-MODEL_META = MODELS_DIR / "cisia_emploi_xgboost_multimodal_complet_balanced.json"
+MODEL_META = MODELS_DIR / "cisia_emploi_xgboost_multimodal_ethique_best_class_2_ethique.json"
 
 # Seuils conservateurs pour bloquer une release uniquement sur une vraie
 # dégradation du modèle sur le jeu de référence gelé.
@@ -185,6 +186,19 @@ def load_reference_set() -> pd.DataFrame:
     return df
 
 
+def extract_model_hyperparameters(meta: dict) -> dict[str, object]:
+    """Read hyperparameters from both legacy and CISIA metadata layouts."""
+    legacy = meta.get("hyperparameters")
+    if isinstance(legacy, dict):
+        return legacy
+    configuration = meta.get("configuration")
+    if isinstance(configuration, dict):
+        parameters = configuration.get("model_parameters")
+        if isinstance(parameters, dict):
+            return parameters
+    return {}
+
+
 def build_mlflow_params(meta: dict, release_tag: str, n_reference: int) -> dict:
     """Construit les params MLflow à partir du JSON du modèle, pas à la main."""
     params: dict[str, object] = {
@@ -202,9 +216,11 @@ def build_mlflow_params(meta: dict, release_tag: str, n_reference: int) -> dict:
         ),
     }
 
-    hyperparams = meta.get("hyperparameters", {})
+    hyperparams = extract_model_hyperparameters(meta)
     for key, value in hyperparams.items():
-        params[f"hyperparameters.{key}"] = value
+        params[f"hyperparameters.{key}"] = (
+            value if isinstance(value, (str, int, float, bool)) else json.dumps(value)
+        )
 
     return params
 
@@ -216,8 +232,8 @@ def main() -> int:
     parser.add_argument("--freeze-baseline", action="store_true")
     args = parser.parse_args()
 
-    model = joblib.load(MODELS_DIR / "cisia_emploi_xgboost_multimodal_complet_balanced.joblib")
-    meta = json.loads((MODELS_DIR / "cisia_emploi_xgboost_multimodal_complet_balanced.json").read_text(encoding="utf-8"))
+    model = joblib.load(MODEL_META.with_suffix(".joblib"))
+    meta = json.loads(MODEL_META.read_text(encoding="utf-8"))
     df = load_reference_set()
 
     if args.freeze_baseline:
@@ -239,10 +255,16 @@ def main() -> int:
     violations = check_thresholds(metrics, baseline)
 
     # --- Bloc MLflow — params lus depuis le JSON du modèle ------------------
-    mlflow.set_experiment("pyrenex-eval-continue")
+    tracking_uri = os.environ.get("MLFLOW_TRACKING_URI")
+    if tracking_uri:
+        mlflow.set_tracking_uri(tracking_uri)
+    mlflow.set_experiment("cisia-emploi-eval-continue")
     with mlflow.start_run(run_name=args.release_tag):
         mlflow.log_params(build_mlflow_params(meta, args.release_tag, len(df)))
         mlflow.log_metrics(metrics)
+        mlflow.set_tag("model_type", meta.get("model_type", "unknown"))
+        mlflow.set_tag("config_name", meta.get("config_name", "unknown"))
+        mlflow.log_dict(meta, "model_metadata.json")
         mlflow.set_tag("status", "failed" if violations else "passed")
         mlflow.set_tag("release_blocked", str(bool(violations)))
     # ------------------------------------------------------------------------

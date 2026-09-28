@@ -3,8 +3,6 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
-from preprocess import PROXY_FEATURES, get_all_features
-
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 
 DATA_PATH = PROJECT_ROOT / "data" / "dataset_trajectoire_emploi.csv"
@@ -42,20 +40,6 @@ SCENARIOS: dict[str, dict[str, Any]] = {
         "include_sensitive": False,
         "include_text": True,
         "text_only": False,
-    },
-    "multimodal_ethique_renforce": {
-        "description": (
-            "S2 bis : variables tabulaires et texte sans variables sensibles "
-            "ni variables proxy (ethique renforce)."
-        ),
-        "include_sensitive": False,
-        "include_text": True,
-        "text_only": False,
-        "features": [
-            feature
-            for feature in get_all_features(include_sensitive=False, include_text=True)
-            if feature not in PROXY_FEATURES
-        ],
     },
     "texte_seul": {
         "description": "Synthèse d'entretien uniquement avec TF-IDF.",

@@ -23,7 +23,7 @@ METADATA_PATH = (
     / "services"
     / "model"
     / "models"
-    / "cisia_emploi_xgboost_multimodal_complet_balanced.json"
+    / "cisia_emploi_xgboost_multimodal_ethique_best_class_2_ethique.json"
 )
 
 OUTPUT_PATH = ROOT / "data" / "reference_set.csv"

@@ -117,8 +117,8 @@ def main() -> int:
     parser.add_argument("--freeze-baseline", action="store_true")
     args = parser.parse_args()
 
-    model = joblib.load(MODELS_DIR / "pyrenex_risk_v2.joblib")
-    meta = json.loads((MODELS_DIR / "pyrenex_risk_v2.json").read_text(encoding="utf-8"))
+    model = joblib.load(MODELS_DIR / "cisia_emploi_xgboost_multimodal_ethique_best_class_2_ethique.joblib")
+    meta = json.loads((MODELS_DIR / "cisia_emploi_xgboost_multimodal_ethique_best_class_2_ethique.json").read_text(encoding="utf-8"))
     df = load_reference_set()
 
     if args.freeze_baseline:
@@ -135,7 +135,7 @@ def main() -> int:
     violations = check_thresholds(metrics, baseline)
 
     # --- Bloc MLflow PRÉ-CÂBLÉ — complétez params + metrics ------------------
-    mlflow.set_experiment("pyrenex-eval-continue")
+    mlflow.set_experiment("cisia-emploi-eval-continue")
     with mlflow.start_run(run_name=args.release_tag):
         mlflow.log_params(
             {

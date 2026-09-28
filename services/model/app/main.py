@@ -1,4 +1,4 @@
-"""Service `model` — API de scoring Pyrenex (fourni — votre exemple de référence).
+"""Service `model` — API de scoring CISIA-Emploi (fourni — votre exemple de référence).
 
 Reprise de l'API M1-B2 (routes `/health`, `/info`, `/predict`) + ajout de
 l'endpoint `/metrics` Prometheus (latence/RPS/erreurs via instrumentator +
@@ -55,7 +55,7 @@ MODELS_DIR = Path(__file__).parent.parent / "models"
 MODEL_PATH = Path(
     os.environ.get(
         "MODEL_ARTIFACT",
-        str(MODELS_DIR / "cisia_emploi_xgboost_multimodal_complet_balanced.joblib"),
+        str(MODELS_DIR / "cisia_emploi_xgboost_multimodal_ethique_best_class_2_ethique.joblib"),
     )
 )
 META_PATH = MODEL_PATH.with_suffix(".json")
@@ -71,7 +71,7 @@ async def lifespan(app: FastAPI):
     MODEL_INFO.labels(
         model_name=app.state.metadata["model_name"],
         model_version=app.state.metadata["model_version"],
-        scenario=app.state.metadata.get("scenario_name", "multimodal_complet"),
+        scenario=app.state.metadata.get("scenario_name", "multimodal_ethique"),
     ).set(1)
     logger.info(
         "Model loaded: {name} {version}",
@@ -84,9 +84,9 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(
-    title="Pyrenex Model Service",
+    title="CISIA-Emploi Model Service",
     version="2.0.0",
-    description="Service interne de scoring crédit Pyrenex (modèle pyrenex_risk_v2).",
+    description="Service interne de scoring CISIA-Emploi (retour à l'emploi).",
     lifespan=lifespan,
 )
 app.add_middleware(LoggingMiddleware)
@@ -169,6 +169,12 @@ async def train(request_data: TrainRequest, request: Request) -> TrainResponse:
     if expected_token and provided_token != expected_token:
         logger.bind(request_id=request_id).warning("Training rejected")
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Training forbidden")
+    if os.environ.get("ALLOW_DIRECT_TRAIN", "false").lower() not in {"1", "true", "yes"}:
+        logger.bind(request_id=request_id).warning("Direct training disabled")
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Direct training is disabled; use the batch retraining and promotion workflow",
+        )
 
     try:
         records = [record.model_dump() for record in request_data.records]

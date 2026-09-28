@@ -674,7 +674,7 @@ def build_categorical_pipeline() -> Pipeline:
 
 def build_text_pipeline(
     max_features: int = 1_000,
-    ngram_range: tuple[int, int] = (1, 2),
+    ngram_range: tuple[int, int] = (2, 3),
     min_df: int = 2,
 ) -> Pipeline:
     """
@@ -718,7 +718,7 @@ def build_preprocessor(
     include_sensitive: bool = True,
     include_text: bool = True,
     tfidf_max_features: int = 1_000,
-    tfidf_ngram_range: tuple[int, int] = (1, 2),
+    tfidf_ngram_range: tuple[int, int] = (2, 3),
     tfidf_min_df: int = 2,
     features: list[str] | None = None,
 ) -> ColumnTransformer:

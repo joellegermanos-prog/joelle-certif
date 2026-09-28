@@ -3,10 +3,12 @@ from __future__ import annotations
 import hashlib
 import sys
 from pathlib import Path
+from types import SimpleNamespace
 
 import numpy as np
 import pandas as pd
 import pytest
+from sklearn.model_selection import ParameterGrid
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 SRC_DIR = PROJECT_ROOT / "src"
@@ -21,13 +23,168 @@ from evaluate import (
 )
 from train import (
     build_robustness_table,
+    build_fit_parameters,
     compare_baseline_hyperparameters,
     compute_stratified_cv_summary,
-    fine_tune_logistic_regression,
-    fine_tune_lightgbm,
-    fine_tune_random_forest,
-    fine_tune_xgboost,
+    _select_best_grid_search_candidate,
+    _summarize_grid_search_results,
+    _critical_error_0_to_2,
 )
+import train as train_module
+
+
+@pytest.mark.parametrize(
+    ("model_type", "config_name", "expected_class_2_weight"),
+    [
+        ("xgboost", "best_class_2_ethique", 2.5),
+        ("lightgbm", "best_class_2_complet", 2.5),
+        ("xgboost", "custom_class_2_heavy", 4.0),
+    ],
+)
+def test_build_fit_parameters_weights_class_2_named_config(
+    monkeypatch: pytest.MonkeyPatch,
+    model_type: str,
+    config_name: str,
+    expected_class_2_weight: float,
+) -> None:
+    if config_name == "custom_class_2_heavy":
+        monkeypatch.setitem(
+            train_module.MODEL_CONFIGS[model_type],
+            config_name,
+            {
+                "class_weight": {
+                    0: 1.0,
+                    1: 1.0,
+                    2: expected_class_2_weight,
+                },
+            },
+        )
+
+    parameters = build_fit_parameters(
+        model_type=model_type,
+        config_name=config_name,
+        y_train=pd.Series([0, 1, 2, 2]),
+    )
+
+    np.testing.assert_array_equal(
+        parameters["classifier__sample_weight"],
+        [1.0, 1.0, expected_class_2_weight, expected_class_2_weight],
+    )
+
+
+def test_grid_search_summary_reports_positive_error_rate() -> None:
+    grid_search = SimpleNamespace(
+        cv_results_={
+            "params": [{"candidate": "lower"}, {"candidate": "higher"}],
+            "mean_test_f1_macro": [0.7, 0.6],
+            "mean_test_f1_class_2": [0.4, 0.7],
+            "mean_test_recall_class_2": [0.5, 0.8],
+            "mean_test_error_2_to_0": [-0.25, -0.1],
+            "mean_test_error_0_to_2": [-0.05, -0.2],
+            "rank_test_f1_macro": [1, 2],
+            "rank_test_f1_class_2": [2, 1],
+        }
+    )
+
+    summary = _summarize_grid_search_results(grid_search)
+
+    assert summary["params"].tolist() == [
+        {"candidate": "higher"},
+        {"candidate": "lower"},
+    ]
+    assert summary["mean_test_error_2_to_0"].tolist() == [0.1, 0.25]
+    assert summary["mean_test_error_0_to_2"].tolist() == [0.2, 0.05]
+    assert summary["mean_test_combined_error_cost"].tolist() == [0.5, 0.8]
+
+
+def test_grid_search_refit_minimizes_weighted_critical_errors_first() -> None:
+    cv_results = {
+        "mean_test_f1_macro": [0.99, 0.60, 0.70, 0.90],
+        "mean_test_error_2_to_0": [-0.10, 0.0, -0.05, -0.20],
+        "mean_test_error_0_to_2": [0.0, -0.25, -0.10, -0.25],
+    }
+
+    assert _select_best_grid_search_candidate(cv_results) == 2
+
+
+def test_critical_error_0_to_2_returns_rate_among_true_class_zero() -> None:
+    y_true = pd.Series([0, 0, 1, 2])
+    y_pred = np.array([2, 1, 2, 0])
+
+    assert _critical_error_0_to_2(y_true, y_pred) == 0.5
+
+
+def test_default_grid_search_candidate_counts(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    candidate_counts: list[int] = []
+    scorer_names: list[set[str]] = []
+
+    class DummyPipeline:
+        def set_params(self, **parameters: object) -> DummyPipeline:
+            return self
+
+    class GridSearchSpy:
+        fit_parameters: list[dict[str, object]] = []
+
+        def __init__(self, **kwargs: object) -> None:
+            candidate_counts.append(
+                len(ParameterGrid(kwargs["param_grid"]))
+            )
+            scorer_names.append(set(kwargs["scoring"]))
+            self.cv_results_ = {
+                "params": [{}],
+                "mean_test_f1_macro": [0.5],
+                "mean_test_f1_class_2": [0.5],
+                "mean_test_recall_class_2": [0.5],
+                "mean_test_error_2_to_0": [-0.1],
+                "mean_test_error_0_to_2": [-0.05],
+                "rank_test_f1_macro": [1],
+                "rank_test_f1_class_2": [1],
+            }
+
+        def fit(
+            self,
+            X: pd.DataFrame,
+            y: pd.Series,
+            **fit_parameters: object,
+        ) -> GridSearchSpy:
+            self.fit_parameters.append(fit_parameters)
+            return self
+
+    monkeypatch.setattr(train_module, "GridSearchCV", GridSearchSpy)
+    monkeypatch.setattr(
+        train_module,
+        "build_training_pipeline",
+        lambda **kwargs: DummyPipeline(),
+    )
+
+    X_train = pd.DataFrame({"feature": range(6)})
+    y_train = pd.Series([0, 0, 1, 1, 2, 2])
+    searches = (
+        lambda: train_module.grid_search_random_forest_class_2(
+            X_train, y_train, scenario_name="texte_seul", cv_folds=2
+        ),
+        lambda: train_module.grid_search_logistic_regression_class_2(
+            "texte_seul", X_train, y_train, cv_folds=2
+        ),
+        lambda: train_module.grid_search_lightgbm_class_2(
+            "texte_seul", X_train, y_train, cv_folds=2
+        ),
+        lambda: train_module.grid_search_xgboost_class_2(
+            "texte_seul", X_train, y_train, cv_folds=2
+        ),
+    )
+
+    for search in searches:
+        search()
+
+    assert candidate_counts == [32, 8, 64, 16]
+    assert all("error_0_to_2" in names for names in scorer_names)
+    np.testing.assert_array_equal(
+        GridSearchSpy.fit_parameters[-1]["classifier__sample_weight"],
+        [1.0, 1.0, 1.0, 1.0, 2.5, 2.5],
+    )
 
 
 def test_validate_dataset_accepts_matching_hash(tmp_path: Path) -> None:
@@ -246,166 +403,14 @@ def test_compare_baseline_hyperparameters_selects_one_configuration() -> None:
     }
 
 
-def test_fine_tune_logistic_regression_returns_metric_table() -> None:
-    documents = [
-        "emploi stable administratif",
-        "travail informatique entreprise",
-        "poste commerce vente",
-        "emploi gestion projet",
-        "travail restauration service",
-        "poste finance data",
-    ] * 5
-    X = pd.DataFrame({"synthese_entretien": documents})
-    y = pd.Series([0, 1, 2] * 10, name="classe_retour_emploi")
-
-    table = fine_tune_logistic_regression(
-        scenario_name="texte_seul",
-        X_train=X,
-        y_train=y,
-        parameter_grid={
-            "solver": ("lbfgs",),
-            "C": (0.5, 1.0),
-            "class_weight": ("balanced",),
-            "max_iter": (200,),
-        },
-        cv_folds=3,
-    )
-
-    assert len(table) == 2
-    assert table["selected"].sum() == 1
-    assert (table["critical_2_to_0"] >= 0).all()
-    assert set(table.columns) >= {
-        "f1_macro",
-        "recall_c2",
-        "precision_c2",
-        "f1_c2",
-        "critical_2_to_0",
-        "log_loss",
-        "analysis",
-    }
 
 
-def test_fine_tune_random_forest_returns_metric_table() -> None:
-    documents = [
-        "emploi stable administratif",
-        "travail informatique entreprise",
-        "poste commerce vente",
-        "emploi gestion projet",
-        "travail restauration service",
-        "poste finance data",
-    ] * 5
-    X = pd.DataFrame({"synthese_entretien": documents})
-    y = pd.Series([0, 1, 2] * 10, name="classe_retour_emploi")
-
-    table = fine_tune_random_forest(
-        scenario_name="texte_seul",
-        X_train=X,
-        y_train=y,
-        parameter_grid={
-            "class_weight": ("balanced",),
-            "class_2_weight": (1.0, 2.0),
-            "n_estimators": (10,),
-            "max_depth": (5,),
-            "min_samples_leaf": (2, 4),
-            "max_features": ("sqrt",),
-        },
-        cv_folds=3,
-    )
-
-    assert len(table) == 4
-    assert table["selected"].sum() == 1
-    assert (table["critical_2_to_0"] >= 0).all()
-    assert set(table.columns) >= {
-        "class_2_weight",
-        "n_estimators",
-        "max_depth",
-        "min_samples_leaf",
-        "max_features",
-        "class_weight",
-        "f1_macro",
-        "recall_c2",
-        "analysis",
-    }
 
 
-def test_fine_tune_xgboost_returns_metric_table() -> None:
-    documents = [
-        "emploi stable administratif",
-        "travail informatique entreprise",
-        "poste commerce vente",
-        "emploi gestion projet",
-        "travail restauration service",
-        "poste finance data",
-    ] * 5
-    X = pd.DataFrame({"synthese_entretien": documents})
-    y = pd.Series([0, 1, 2] * 10, name="classe_retour_emploi")
-
-    table = fine_tune_xgboost(
-        scenario_name="texte_seul",
-        X_train=X,
-        y_train=y,
-        parameter_grid={
-            "class_2_weight": (1.0, 2.5),
-            "n_estimators": (10,),
-            "learning_rate": (0.05, 0.1),
-            "max_depth": (3,),
-            "colsample_bytree": (0.7,),
-        },
-        cv_folds=3,
-    )
-
-    assert len(table) == 4
-    assert table["selected"].sum() == 1
-    assert (table["critical_2_to_0"] >= 0).all()
-    assert set(table.columns) >= {
-        "class_2_weight",
-        "n_estimators",
-        "learning_rate",
-        "max_depth",
-        "colsample_bytree",
-        "f1_macro",
-        "recall_c2",
-        "analysis",
-    }
 
 
-def test_fine_tune_lightgbm_returns_metric_table() -> None:
-    documents = [
-        "emploi stable administratif",
-        "travail informatique entreprise",
-        "poste commerce vente",
-        "emploi gestion projet",
-        "travail restauration service",
-        "poste finance data",
-    ] * 5
-    X = pd.DataFrame({"synthese_entretien": documents})
-    y = pd.Series([0, 1, 2] * 10, name="classe_retour_emploi")
 
-    table = fine_tune_lightgbm(
-        scenario_name="texte_seul",
-        X_train=X,
-        y_train=y,
-        parameter_grid={
-            "class_weight": (None, "balanced"),
-            "n_estimators": (10,),
-            "learning_rate": (0.02, 0.05),
-            "num_leaves": (15,),
-            "min_child_samples": (10,),
-            "colsample_bytree": (0.7,),
-        },
-        cv_folds=3,
-    )
 
-    assert len(table) == 4
-    assert table["selected"].sum() == 1
-    assert (table["critical_2_to_0"] >= 0).all()
-    assert set(table.columns) >= {
-        "n_estimators",
-        "learning_rate",
-        "num_leaves",
-        "min_child_samples",
-        "colsample_bytree",
-        "f1_macro",
-        "recall_c2",
-        "analysis",
-    }
+
+
+

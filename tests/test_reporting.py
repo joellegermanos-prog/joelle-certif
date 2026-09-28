@@ -27,6 +27,10 @@ def test_create_benchmark_sorts_and_writes_csv(tmp_path: Path) -> None:
                 "f1_class_1": 0.59,
                 "f1_class_2": 0.49,
                 "roc_auc_ovr_macro": 0.82,
+                    "erreur_critique_2_vers_0": 8,
+                    "erreur_critique_0_vers_2": 10,
+                    "latency_p95_ms": 12.5,
+                    "cpu_seconds_1000_predictions": 0.25,
             },
         },
         {
@@ -41,6 +45,10 @@ def test_create_benchmark_sorts_and_writes_csv(tmp_path: Path) -> None:
                 "f1_class_1": 0.70,
                 "f1_class_2": 0.75,
                 "roc_auc_ovr_macro": 0.88,
+                    "erreur_critique_2_vers_0": 5,
+                    "erreur_critique_0_vers_2": 6,
+                    "latency_p95_ms": 9.5,
+                    "cpu_seconds_1000_predictions": 0.15,
             },
         },
     ]
@@ -52,6 +60,17 @@ def test_create_benchmark_sorts_and_writes_csv(tmp_path: Path) -> None:
     assert list(benchmark.columns[:3]) == ["rang", "model_type", "scenario"]
     assert benchmark.iloc[0]["model_type"] == "logistic_regression"
     assert benchmark.iloc[0]["rang"] == 1
+    assert "erreur_critique_2_vers_0" in benchmark.columns
+    assert "erreur_critique_0_vers_2" in benchmark.columns
+    assert benchmark.iloc[0]["erreur_critique_0_vers_2"] == 6
+    assert "latency_p95_ms" in benchmark.columns
+    assert "cpu_seconds_1000_predictions" in benchmark.columns
+    assert not {
+        "latency_mean_ms",
+        "latency_median_ms",
+        "cpu_mean_ms",
+        "cpu_p95_ms",
+    }.intersection(benchmark.columns)
     assert output_path.exists()
     assert output_path.stat().st_size > 0
 

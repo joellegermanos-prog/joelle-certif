@@ -12,3 +12,8 @@ scrape_configs:
     metrics_path: /metrics
     static_configs:
       - targets: ["backend:8001"]
+
+  - job_name: "backend-drift"
+    metrics_path: /drift-metrics
+    static_configs:
+      - targets: ["backend:8001"]

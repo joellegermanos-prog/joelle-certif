@@ -47,7 +47,6 @@ import json
 import platform
 
 from datetime import datetime, timezone
-from itertools import product
 from pathlib import Path
 from time import perf_counter
 from typing import Any
@@ -63,11 +62,10 @@ from sklearn.metrics import (
     accuracy_score,
     f1_score,
     make_scorer,
-    precision_score,
     recall_score,
 )
 from sklearn.model_selection import (
-    cross_validate,
+    GridSearchCV,
     StratifiedKFold,
     train_test_split,
 )
@@ -191,16 +189,44 @@ MODEL_CONFIGS: dict[
         },
 
         "balanced_tuned": {
-           "n_estimators": 500,
-            "max_depth": 18,
-            "min_samples_leaf": 4,
-            #"class_2_weight": 2,
-            "class_weight": "balanced",
-            "max_features": 0.35,
-            "random_state": RANDOM_STATE,
+           "n_estimators": 300,
+            "max_depth": None,
+            "min_samples_leaf": 1,
+            "class_weight": None,
+            "max_features": "sqrt",
+            "random_state": 42,
             "n_jobs": -1,
         },
+        
+        "best_class_2_text": {
+            "n_estimators": 300,
+            "max_depth": None,
+            "min_samples_leaf": 1,
+            "class_weight": None,
+            "max_features": "sqrt",
+            "random_state": RANDOM_STATE,
+            "n_jobs": 1,
+        },
+        
+        "tuned1": {
+           "n_estimators": 300,
+            "min_samples_leaf": 1,
+            "class_weight": None,
+            "max_depth": None,
+            "max_features": "sqrt",
+            "random_state": 42,
+            "n_jobs": 1,
+        },
 
+        "tuned2": {
+           "n_estimators": 500,
+            "min_samples_leaf": 2,
+            "class_weight": None,
+            "max_depth": 18,
+            "max_features": 0.35,
+            "random_state": 42,
+            "n_jobs": 1,
+        },
         "critical_class_2": {
             "n_estimators": 400,
             "min_samples_leaf": 2,
@@ -243,12 +269,13 @@ MODEL_CONFIGS: dict[
         },
 
         "balanced_tuned": {
-            "solver": "saga",
+            "solver": "lbfgs",
             "max_iter": 2_000,
-            "C": 0.5,
+            "C": 0.1,
             "class_weight": None,
             "random_state": RANDOM_STATE,
         },
+
 
         "critical_class_2": {
             "solver": "lbfgs",
@@ -298,18 +325,29 @@ MODEL_CONFIGS: dict[
             "verbosity": -1,
         },
 
-        "balanced_tuned": {
+        "best_class_2_complet": {
             "objective": "multiclass",
             "num_class": 3,
-            "class_weight": "balanced",
-            "n_estimators": 50,
-            "learning_rate": 0.02,
-            "num_leaves": 24,
-            #"subsample": 0.90,
-            #"subsample_freq": 1,
-            "colsample_bytree": 0.50,
+            "class_weight": {0: 1.0, 1: 1.0, 2: 2.5},
+            "colsample_bytree": 0.9,
+            "learning_rate": 0.03,
             "min_child_samples": 10,
-            #"reg_lambda": 1.0,
+            "n_estimators": 350,
+            "num_leaves": 15,
+            "random_state": RANDOM_STATE,
+            "n_jobs": 1,
+            "verbosity": -1,
+        },
+
+        "best_class_2_tab": {
+            "objective": "multiclass",
+            "num_class": 3,
+            "class_weight": None,
+            "colsample_bytree": 0.9,
+            "learning_rate": 0.03,
+            "min_child_samples": 10,
+            "n_estimators": 150,
+            "num_leaves": 15,
             "random_state": RANDOM_STATE,
             "n_jobs": 1,
             "verbosity": -1,
@@ -380,23 +418,21 @@ MODEL_CONFIGS: dict[
             "verbosity": 0,
         },
 
-        "balanced_tuned": {
+        "best_class_2_ethique": {
             "objective": "multi:softprob",
             "num_class": 3,
-            "n_estimators": 300,
-            "learning_rate": 0.10,
-            "max_depth": 4,
-            "min_child_weight": 2.0,
-            "subsample": 0.90,
-            "colsample_bytree": 0.5,
-            "reg_lambda": 1.0,
+            "colsample_bytree": 0.9,
+            "learning_rate": 0.03,
+            "max_depth": 3,
+            "min_child_weight": 3,
+            "n_estimators": 400,
+            "subsample": 0.9,
             "tree_method": "hist",
             "eval_metric": "mlogloss",
             "random_state": RANDOM_STATE,
             "n_jobs": -1,
             "verbosity": 0,
         },
-
 
         "critical_class_2": {
             "objective": "multi:softprob",
@@ -705,7 +741,7 @@ def build_training_pipeline(
     ):
         preprocessor = build_text_pipeline(
             max_features=1_000,
-            ngram_range=(1, 2),
+            ngram_range=(2, 3),
             min_df=text_min_df,
         )
 
@@ -720,7 +756,7 @@ def build_training_pipeline(
                 True,
             ),
             tfidf_max_features=1_000,
-            tfidf_ngram_range=(1, 2),
+            tfidf_ngram_range=(2, 3),
             tfidf_min_df=text_min_df,
             features=scenario.get(
                 "features"
@@ -824,12 +860,24 @@ def build_fit_parameters(
             y=y_train,
         )
 
-    elif config_name == "critical_class_2":
-        class_weights = {
-            0: 1.0,
-            1: 1.0,
-            2: 2.5,
-        }
+    elif "class_2" in config_name.lower():
+        model_parameters = MODEL_CONFIGS.get(
+            model_type,
+            {},
+        ).get(
+            config_name,
+            {},
+        )
+        class_weights = model_parameters.get(
+            "class_weight"
+        )
+
+        if not isinstance(class_weights, dict):
+            class_weights = {
+                0: 1.0,
+                1: 1.0,
+                2: 2.5,
+            }
 
         sample_weight = (
             y_train
@@ -1446,19 +1494,6 @@ def _recall_class_2(
     return float(values[2])
 
 
-def _precision_class_2(
-    y_true: pd.Series,
-    y_pred: np.ndarray,
-) -> float:
-    """Calcule la précision de la classe 2 pour un scorer sklearn."""
-    values = precision_score(
-        y_true,
-        y_pred,
-        labels=CLASS_LABELS,
-        average=None,
-        zero_division=0,
-    )
-    return float(values[2])
 
 
 def _f1_class_2(
@@ -1493,705 +1528,435 @@ def _critical_error_2_to_0(
     )
 
 
-def fine_tune_logistic_regression(
-    scenario_name: str,
+def _critical_error_0_to_2(
+    y_true: pd.Series,
+    y_pred: np.ndarray,
+) -> float:
+    """Mesure la proportion de classes 0 prédites à tort comme classe 2."""
+    true_class_0 = np.asarray(y_true) == 0
+    count_class_0 = int(true_class_0.sum())
+
+    if count_class_0 == 0:
+        return 0.0
+
+    return float(
+        (np.asarray(y_pred)[true_class_0] == 2).sum()
+        / count_class_0
+    )
+
+
+_WEIGHT_CRITICAL_ERROR_2_TO_0 = 3.0
+_WEIGHT_FALSE_ALERT_0_TO_2 = 1.0
+
+
+def _select_best_grid_search_candidate(
+    cv_results: dict[str, Any],
+) -> int:
+    """Minimise le coût métier pondéré, puis départage par F1 macro."""
+    error_2_to_0 = cv_results[
+        "mean_test_error_2_to_0"
+    ]
+    error_0_to_2 = cv_results[
+        "mean_test_error_0_to_2"
+    ]
+    f1_macro_scores = cv_results["mean_test_f1_macro"]
+
+    def combined_cost(index: int) -> float:
+        cost = (
+            _WEIGHT_CRITICAL_ERROR_2_TO_0 * (-error_2_to_0[index])
+            + _WEIGHT_FALSE_ALERT_0_TO_2 * (-error_0_to_2[index])
+        )
+        return -cost
+
+    return max(
+        range(len(f1_macro_scores)),
+        key=lambda index: (
+            combined_cost(index),
+            f1_macro_scores[index],
+        ),
+    )
+
+
+def _summarize_grid_search_results(
+    grid_search: GridSearchCV,
+) -> pd.DataFrame:
+    """Trie par macro F1, class-2 F1, puis erreur critique croissante."""
+    results_df = pd.DataFrame(grid_search.cv_results_)
+    summary_cols = [
+        "params",
+        "mean_test_f1_macro",
+        "mean_test_f1_class_2",
+        "mean_test_recall_class_2",
+        "mean_test_error_2_to_0",
+        "mean_test_error_0_to_2",
+        "rank_test_f1_macro",
+        "rank_test_f1_class_2",
+    ]
+    summary = results_df[summary_cols].copy()
+    summary["mean_test_error_2_to_0"] *= -1
+    summary["mean_test_error_0_to_2"] *= -1
+    summary["mean_test_combined_error_cost"] = (
+        _WEIGHT_CRITICAL_ERROR_2_TO_0 * summary["mean_test_error_2_to_0"]
+        + _WEIGHT_FALSE_ALERT_0_TO_2 * summary["mean_test_error_0_to_2"]
+    )
+    return summary.sort_values(
+        [
+            "mean_test_combined_error_cost",
+            "mean_test_f1_macro",
+        ],
+        ascending=[True, False],
+        kind="stable",
+    ).reset_index(drop=True)
+
+
+def grid_search_random_forest_class_2(
     X_train: pd.DataFrame,
     y_train: pd.Series,
-    parameter_grid: dict[str, tuple[Any, ...]] | None = None,
+    parameter_grid: list[dict[str, list[Any]]] | None = None,
+    scenario_name: str | None = None,
     cv_folds: int = 5,
-) -> pd.DataFrame:
+    n_jobs: int = -1,
+) -> tuple[GridSearchCV, pd.DataFrame]:
+    """Recherche les hyperparamètres d'un Random Forest pour la classe 2.
+
+    La validation croisée est réalisée uniquement sur ``X_train`` et
+    ``y_train``. Lorsque ``scenario_name`` est fourni, le pipeline de
+    prétraitement du projet est utilisé avant le Random Forest.
     """
-    Recherche les réglages de Logistic Regression indépendamment des configs.
-
-    La fonction ne lit pas ``MODEL_CONFIGS["logistic_regression"]`` pour
-    choisir les hyperparamètres. Elle construit ses propres pipelines et
-    compare toutes les combinaisons de ``solver``, ``C``, ``class_weight`` et
-    ``max_iter`` avec une validation croisée sur ``X_train`` uniquement.
-
-    Le tableau est trié par F1 macro décroissant, puis par erreur critique
-    2 vers 0 croissante. Le holdout ne doit pas être passé à cette fonction.
-    """
-    if scenario_name not in SCENARIOS:
-        raise ValueError(
-            f"Scénario inconnu : '{scenario_name}'. "
-            f"Scénarios disponibles : {list(SCENARIOS)}"
-        )
-
     if parameter_grid is None:
-        parameter_grid = {
-            "solver": ("lbfgs", "saga"),
-            "C": (1.0, 0.5),
-            "class_weight": (None, "balanced"),
-            "max_iter": (2_000, 3_000),
-        }
-
-    required_parameters = {
-        "solver",
-        "C",
-        "class_weight",
-        "max_iter",
-    }
-    missing_parameters = required_parameters - set(parameter_grid)
-
-    if missing_parameters:
-        raise ValueError(
-            "Grille incomplète. Paramètres absents : "
-            f"{sorted(missing_parameters)}"
-        )
-
-    class_counts = y_train.value_counts()
-    effective_folds = min(
-        cv_folds,
-        int(class_counts.min()),
-    )
-
-    if effective_folds < 2:
-        raise ValueError(
-            "La validation croisée exige au moins deux observations "
-            "dans chaque classe."
-        )
-
-    cv = StratifiedKFold(
-        n_splits=effective_folds,
-        shuffle=True,
-        random_state=RANDOM_STATE,
-    )
-    scoring = {
-        "f1_macro": make_scorer(
-            f1_score,
-            average="macro",
-            zero_division=0,
-        ),
-        "recall_c2": make_scorer(_recall_class_2),
-        "precision_c2": make_scorer(_precision_class_2),
-        "f1_c2": make_scorer(_f1_class_2),
-        "critical_2_to_0": make_scorer(
-            _critical_error_2_to_0,
-            greater_is_better=False,
-        ),
-        "neg_log_loss": "neg_log_loss",
-    }
-    rows: list[dict[str, Any]] = []
-
-    parameter_names = (
-        "solver",
-        "C",
-        "class_weight",
-        "max_iter",
-    )
-
-    for values in product(
-        *(parameter_grid[name] for name in parameter_names)
-    ):
-        parameters = dict(
-            zip(
-                parameter_names,
-                values,
-            )
-        )
-        pipeline = build_training_pipeline(
-            model_type="logistic_regression",
-            scenario_name=scenario_name,
-            config_name="default",
-            classifier_parameters=parameters,
-        )
-
-        scores = cross_validate(
-            pipeline,
-            X_train,
-            y_train,
-            cv=cv,
-            scoring=scoring,
-            error_score="raise",
-            n_jobs=1,
-        )
-
-        rows.append(
+        parameter_grid = [
             {
-                "scenario": scenario_name,
-                **parameters,
-                "f1_macro": float(scores["test_f1_macro"].mean()),
-                "f1_macro_std": float(scores["test_f1_macro"].std()),
-                "recall_c2": float(scores["test_recall_c2"].mean()),
-                "precision_c2": float(
-                    scores["test_precision_c2"].mean()
-                ),
-                "f1_c2": float(scores["test_f1_c2"].mean()),
-                "critical_2_to_0": float(
-                    max(
-                        0.0,
-                        -scores["test_critical_2_to_0"].mean(),
-                    )
-                ),
-                "log_loss": float(
-                    -scores["test_neg_log_loss"].mean()
-                ),
-            }
-        )
+                "n_estimators": [300, 500],
+                "max_depth": [None, 18],
+                "min_samples_leaf": [1, 2],
+                "max_features": ["sqrt"],
+                "class_weight": [
+                    None,
+                    "balanced",
+                    {0: 1.0, 1: 1.0, 2: 2.5},
+                    {0: 1.0, 1: 1.0, 2: 4.0},
+                ],
+                "random_state": [RANDOM_STATE],
+                "n_jobs": [1],
+            },
+        ]
 
-    results = pd.DataFrame(rows).sort_values(
-        ["f1_macro", "critical_2_to_0", "recall_c2"],
-        ascending=[False, True, False],
-        ignore_index=True,
-    )
-    results["selected"] = False
+    if cv_folds < 2:
+        raise ValueError("cv_folds doit être supérieur ou égal à 2.")
 
-    if not results.empty:
-        results.loc[0, "selected"] = True
-        best_f1_macro = results.loc[0, "f1_macro"]
-        results["analysis"] = results.apply(
-            lambda row: (
-                "Retenu : meilleur F1 macro CV."
-                if row["selected"]
-                else (
-                    "F1 macro inférieur de "
-                    f"{best_f1_macro - row['f1_macro']:.3f} "
-                    "par rapport au réglage retenu."
-                )
-            ),
-            axis=1,
-        )
-
-    return results
-
-
-def fine_tune_random_forest(
-    scenario_name: str,
-    X_train: pd.DataFrame,
-    y_train: pd.Series,
-    parameter_grid: dict[str, tuple[Any, ...]] | None = None,
-    cv_folds: int = 5,
-) -> pd.DataFrame:
-    """
-    Recherche les réglages de Random Forest indépendamment des configs.
-
-    La fonction compare ``class_weight``, ``n_estimators``, ``max_depth``,
-    ``min_samples_leaf`` et ``max_features`` avec une validation croisée
-    réalisée uniquement sur ``X_train`` et ``y_train``.
-    """
-    if scenario_name not in SCENARIOS:
-        raise ValueError(
-            f"Scénario inconnu : '{scenario_name}'. "
-            f"Scénarios disponibles : {list(SCENARIOS)}"
-        )
-
-    if parameter_grid is None:
-        parameter_grid = {
-            "class_weight": ("balanced", "balanced_subsample"),
-            "class_2_weight": (1.0, 2.0),
-            "n_estimators": (50, 500),
-            "max_depth": (5, 18),
-            "min_samples_leaf": (2, 4),
-            "max_features": ("sqrt", 0.35, "log2"),
-        }
-
-    parameter_names = (
-        "class_weight",
-        "class_2_weight",
-        "n_estimators",
-        "max_depth",
-        "min_samples_leaf",
-        "max_features",
-    )
-
-    if "class_2_weight" not in parameter_grid:
-        parameter_grid = dict(parameter_grid)
-        parameter_grid["class_2_weight"] = (1.0, 2.0)
-
-    missing_parameters = set(parameter_names) - set(parameter_grid)
-
-    if missing_parameters:
-        raise ValueError(
-            "Grille incomplète. Paramètres absents : "
-            f"{sorted(missing_parameters)}"
-        )
-
-    class_counts = y_train.value_counts()
-    effective_folds = min(
-        cv_folds,
-        int(class_counts.min()),
-    )
-
+    class_counts = pd.Series(y_train).value_counts()
+    effective_folds = min(cv_folds, int(class_counts.min()))
     if effective_folds < 2:
         raise ValueError(
             "La validation croisée exige au moins deux observations "
             "dans chaque classe."
         )
 
-    cv = StratifiedKFold(
-        n_splits=effective_folds,
-        shuffle=True,
-        random_state=RANDOM_STATE,
-    )
     scoring = {
         "f1_macro": make_scorer(
             f1_score,
             average="macro",
             zero_division=0,
         ),
-        "recall_c2": make_scorer(_recall_class_2),
-        "precision_c2": make_scorer(_precision_class_2),
-        "f1_c2": make_scorer(_f1_class_2),
-        "critical_2_to_0": make_scorer(
+        "recall_class_2": make_scorer(_recall_class_2),
+        "f1_class_2": make_scorer(_f1_class_2),
+        "error_2_to_0": make_scorer(
             _critical_error_2_to_0,
             greater_is_better=False,
         ),
-        "neg_log_loss": "neg_log_loss",
+        "error_0_to_2": make_scorer(
+            _critical_error_0_to_2,
+            greater_is_better=False,
+        ),
     }
-    rows: list[dict[str, Any]] = []
+    cv = StratifiedKFold(
+        n_splits=effective_folds,
+        shuffle=True,
+        random_state=RANDOM_STATE,
+    )
 
-    for values in product(
-        *(parameter_grid[name] for name in parameter_names)
-    ):
-        parameters = dict(
-            zip(
-                parameter_names,
-                values,
-            )
-        )
-        class_2_weight = parameters.pop("class_2_weight")
-        if parameters["class_weight"] not in {
-            "balanced",
-            "balanced_subsample",
-        }:
+    if scenario_name is None:
+        estimator: Any = RandomForestClassifier()
+    else:
+        if scenario_name not in SCENARIOS:
             raise ValueError(
-                "class_weight doit être 'balanced' ou "
-                "'balanced_subsample' quand class_2_weight est utilisé."
+                f"Scénario inconnu : '{scenario_name}'. "
+                f"Scénarios disponibles : {list(SCENARIOS)}"
             )
-
-        parameters["class_weight"] = {
-            0: 1.0,
-            1: 1.0,
-            2: class_2_weight,
-        }
-        pipeline = build_training_pipeline(
+        estimator = build_training_pipeline(
             model_type="random_forest",
             scenario_name=scenario_name,
             config_name="default",
-            classifier_parameters=parameters,
         )
-
-        scores = cross_validate(
-            pipeline,
-            X_train,
-            y_train,
-            cv=cv,
-            scoring=scoring,
-            error_score="raise",
-            n_jobs=1,
-        )
-
-        rows.append(
+        parameter_grid = [
             {
-                "scenario": scenario_name,
-                "class_2_weight": class_2_weight,
-                **parameters,
-                "f1_macro": float(scores["test_f1_macro"].mean()),
-                "f1_macro_std": float(scores["test_f1_macro"].std()),
-                "recall_c2": float(scores["test_recall_c2"].mean()),
-                "precision_c2": float(
-                    scores["test_precision_c2"].mean()
-                ),
-                "f1_c2": float(scores["test_f1_c2"].mean()),
-                "critical_2_to_0": float(
-                    max(
-                        0.0,
-                        -scores["test_critical_2_to_0"].mean(),
-                    )
-                ),
-                "log_loss": float(
-                    -scores["test_neg_log_loss"].mean()
-                ),
+                f"classifier__{name}": values
+                for name, values in parameters.items()
             }
-        )
+            for parameters in parameter_grid
+        ]
 
-    results = pd.DataFrame(rows).sort_values(
-        ["f1_macro", "critical_2_to_0", "recall_c2"],
-        ascending=[False, True, False],
-        ignore_index=True,
+    grid_search = GridSearchCV(
+        estimator=estimator,
+        param_grid=parameter_grid,
+        scoring=scoring,
+        refit=_select_best_grid_search_candidate,
+        cv=cv,
+        n_jobs=n_jobs,
+        error_score="raise",
     )
-    results["selected"] = False
+    grid_search.fit(X_train, y_train)
 
-    if not results.empty:
-        results.loc[0, "selected"] = True
-        best_f1_macro = results.loc[0, "f1_macro"]
-        results["analysis"] = results.apply(
-            lambda row: (
-                "Retenu : meilleur F1 macro CV."
-                if row["selected"]
-                else (
-                    "F1 macro inférieur de "
-                    f"{best_f1_macro - row['f1_macro']:.3f} "
-                    "par rapport au réglage retenu."
-                )
-            ),
-            axis=1,
-        )
-
-    return results
+    return grid_search, _summarize_grid_search_results(grid_search)
 
 
-def fine_tune_xgboost(
+def _grid_search_pipeline_class_2(
+    model_type: str,
     scenario_name: str,
     X_train: pd.DataFrame,
     y_train: pd.Series,
-    parameter_grid: dict[str, tuple[Any, ...]] | None = None,
-    cv_folds: int = 5,
-) -> pd.DataFrame:
-    """
-    Recherche les réglages de XGBoost indépendamment des configurations.
-
-    Le problème CISIA est multiclasses : le modèle utilise donc
-    ``multi:softprob`` avec ``num_class=3``. Les scores sont calculés
-    uniquement sur ``X_train`` et ``y_train`` avec une CV stratifiée.
-    """
+    parameter_grid: list[dict[str, list[Any]]],
+    cv_folds: int,
+    n_jobs: int,
+) -> tuple[GridSearchCV, pd.DataFrame]:
+    """Exécute un GridSearchCV avec les métriques dédiées à la classe 2."""
     if scenario_name not in SCENARIOS:
         raise ValueError(
             f"Scénario inconnu : '{scenario_name}'. "
             f"Scénarios disponibles : {list(SCENARIOS)}"
         )
 
-    if XGBClassifier is None:
-        raise ImportError(
-            "XGBoost n'est pas installé."
-        )
-
-    if parameter_grid is None:
-        parameter_grid = {
-            "class_2_weight": (1.0, 2.5),
-            "n_estimators": (50, 300),
-            "learning_rate": (0.05, 0.1),
-            "max_depth": (4, 6),
-            "colsample_bytree": (0.5, 0.7),
-        }
-
-    parameter_names = (
-        "class_2_weight",
-        "n_estimators",
-        "learning_rate",
-        "max_depth",
-        "colsample_bytree",
-    )
-
-    if "class_2_weight" not in parameter_grid:
-        parameter_grid = dict(parameter_grid)
-        parameter_grid["class_2_weight"] = (1.0, 2.5)
-
-    missing_parameters = set(parameter_names) - set(parameter_grid)
-
-    if missing_parameters:
-        raise ValueError(
-            "Grille incomplète. Paramètres absents : "
-            f"{sorted(missing_parameters)}"
-        )
-
-    class_counts = y_train.value_counts()
-    effective_folds = min(
-        cv_folds,
-        int(class_counts.min()),
-    )
-
+    class_counts = pd.Series(y_train).value_counts()
+    effective_folds = min(cv_folds, int(class_counts.min()))
     if effective_folds < 2:
         raise ValueError(
             "La validation croisée exige au moins deux observations "
             "dans chaque classe."
         )
 
-    cv = StratifiedKFold(
-        n_splits=effective_folds,
-        shuffle=True,
-        random_state=RANDOM_STATE,
+    estimator = build_training_pipeline(
+        model_type=model_type,
+        scenario_name=scenario_name,
+        config_name="default",
     )
+    prefixed_grid = [
+        {
+            f"classifier__{name}": values
+            for name, values in parameters.items()
+        }
+        for parameters in parameter_grid
+    ]
     scoring = {
         "f1_macro": make_scorer(
             f1_score,
             average="macro",
             zero_division=0,
         ),
-        "recall_c2": make_scorer(_recall_class_2),
-        "precision_c2": make_scorer(_precision_class_2),
-        "f1_c2": make_scorer(_f1_class_2),
-        "critical_2_to_0": make_scorer(
+        "recall_class_2": make_scorer(_recall_class_2),
+        "f1_class_2": make_scorer(_f1_class_2),
+        "error_2_to_0": make_scorer(
             _critical_error_2_to_0,
             greater_is_better=False,
         ),
-        "neg_log_loss": "neg_log_loss",
+        "error_0_to_2": make_scorer(
+            _critical_error_0_to_2,
+            greater_is_better=False,
+        ),
     }
-    rows: list[dict[str, Any]] = []
+    cv = StratifiedKFold(
+        n_splits=effective_folds,
+        shuffle=True,
+        random_state=RANDOM_STATE,
+    )
+    grid_search = GridSearchCV(
+        estimator=estimator,
+        param_grid=prefixed_grid,
+        scoring=scoring,
+        refit=_select_best_grid_search_candidate,
+        cv=cv,
+        n_jobs=n_jobs,
+        error_score="raise",
+    )
+    grid_search.fit(X_train, y_train)
 
-    for values in product(
-        *(parameter_grid[name] for name in parameter_names)
-    ):
-        parameters = dict(
-            zip(
-                parameter_names,
-                values,
-            )
-        )
-        parameters.update(
+    return grid_search, _summarize_grid_search_results(grid_search)
+
+
+def grid_search_logistic_regression_class_2(
+    scenario_name: str,
+    X_train: pd.DataFrame,
+    y_train: pd.Series,
+    parameter_grid: list[dict[str, list[Any]]] | None = None,
+    cv_folds: int = 5,
+    n_jobs: int = -1,
+) -> tuple[GridSearchCV, pd.DataFrame]:
+    """Optimise Logistic Regression pour la détection de la classe 2."""
+    if parameter_grid is None:
+        parameter_grid = [
             {
-                "objective": "multi:softprob",
-                "num_class": len(CLASS_LABELS),
-                "tree_method": "hist",
-                "eval_metric": "mlogloss",
-                "random_state": RANDOM_STATE,
-                "n_jobs": -1,
-                "verbosity": 0,
-            }
-        )
-
-        sample_weight = np.where(
-            y_train.to_numpy() == 2,
-            parameters["class_2_weight"],
-            1.0,
-        )
-
-        pipeline = build_training_pipeline(
-            model_type="xgboost",
-            scenario_name=scenario_name,
-            config_name="default",
-            classifier_parameters=parameters,
-        )
-
-        scores = cross_validate(
-            pipeline,
-            X_train,
-            y_train,
-            cv=cv,
-            scoring=scoring,
-            params={
-                "classifier__sample_weight": sample_weight,
+                "solver": ["lbfgs"],
+                "C": [0.1, 1.0],
+                "class_weight": [
+                    None,
+                    "balanced",
+                    {0: 1.0, 1: 1.0, 2: 2.5},
+                    {0: 1.0, 1: 1.0, 2: 4.0},
+                ],
+                "max_iter": [2_000],
             },
-            error_score="raise",
-            n_jobs=1,
-        )
+        ]
 
-        rows.append(
-            {
-                "scenario": scenario_name,
-                "class_2_weight": parameters["class_2_weight"],
-                "n_estimators": parameters["n_estimators"],
-                "learning_rate": parameters["learning_rate"],
-                "max_depth": parameters["max_depth"],
-                "colsample_bytree": parameters["colsample_bytree"],
-                "f1_macro": float(scores["test_f1_macro"].mean()),
-                "f1_macro_std": float(scores["test_f1_macro"].std()),
-                "recall_c2": float(scores["test_recall_c2"].mean()),
-                "precision_c2": float(
-                    scores["test_precision_c2"].mean()
-                ),
-                "f1_c2": float(scores["test_f1_c2"].mean()),
-                "critical_2_to_0": float(
-                    max(
-                        0.0,
-                        -scores["test_critical_2_to_0"].mean(),
-                    )
-                ),
-                "log_loss": float(
-                    -scores["test_neg_log_loss"].mean()
-                ),
-            }
-        )
-
-    results = pd.DataFrame(rows).sort_values(
-        ["f1_macro", "critical_2_to_0", "recall_c2"],
-        ascending=[False, True, False],
-        ignore_index=True,
+    return _grid_search_pipeline_class_2(
+        model_type="logistic_regression",
+        scenario_name=scenario_name,
+        X_train=X_train,
+        y_train=y_train,
+        parameter_grid=parameter_grid,
+        cv_folds=cv_folds,
+        n_jobs=n_jobs,
     )
-    results["selected"] = False
-
-    if not results.empty:
-        results.loc[0, "selected"] = True
-        best_f1_macro = results.loc[0, "f1_macro"]
-        results["analysis"] = results.apply(
-            lambda row: (
-                "Retenu : meilleur F1 macro CV."
-                if row["selected"]
-                else (
-                    "F1 macro inférieur de "
-                    f"{best_f1_macro - row['f1_macro']:.3f} "
-                    "par rapport au réglage retenu."
-                )
-            ),
-            axis=1,
-        )
-
-    return results
 
 
-def fine_tune_lightgbm(
+def grid_search_lightgbm_class_2(
     scenario_name: str,
     X_train: pd.DataFrame,
     y_train: pd.Series,
-    parameter_grid: dict[str, tuple[Any, ...]] | None = None,
+    parameter_grid: list[dict[str, list[Any]]] | None = None,
     cv_folds: int = 5,
-) -> pd.DataFrame:
-    """
-    Recherche les réglages de LightGBM indépendamment des configurations.
+    n_jobs: int = -1,
+) -> tuple[GridSearchCV, pd.DataFrame]:
+    """Optimise LightGBM pour la détection de la classe 2."""
+    if parameter_grid is None:
+        parameter_grid = [
+            {
+                "n_estimators": [150, 350],
+                "learning_rate": [0.03, 0.08],
+                "num_leaves": [15, 31],
+                "min_child_samples": [10, 30],
+                "colsample_bytree": [0.9],
+                "class_weight": [
+                    None,
+                    "balanced",
+                    {0: 1.0, 1: 1.0, 2: 2.5},
+                    {0: 1.0, 1: 1.0, 2: 4.0},
+                ],
+            },
+        ]
 
-    Le modèle est configuré en multiclasses avec trois classes. Les scores
-    sont calculés uniquement sur ``X_train`` et ``y_train`` avec une CV
-    stratifiée.
+    return _grid_search_pipeline_class_2(
+        model_type="lightgbm",
+        scenario_name=scenario_name,
+        X_train=X_train,
+        y_train=y_train,
+        parameter_grid=parameter_grid,
+        cv_folds=cv_folds,
+        n_jobs=n_jobs,
+    )
+
+def grid_search_xgboost_class_2(
+    scenario_name: str,
+    X_train: pd.DataFrame,
+    y_train: pd.Series,
+    parameter_grid: list[dict[str, list[Any]]] | None = None,
+    cv_folds: int = 5,
+    n_jobs: int = -1,
+) -> tuple[GridSearchCV, pd.DataFrame]:
+    """Optimise XGBoost pour la détection de la classe 2.
+
+    Le pipeline de prétraitement du scénario est inclus dans la recherche.
+    La validation croisée utilise uniquement ``X_train`` et ``y_train``.
     """
+    if XGBClassifier is None:
+        raise ImportError("XGBoost n'est pas installé.")
+
     if scenario_name not in SCENARIOS:
         raise ValueError(
             f"Scénario inconnu : '{scenario_name}'. "
             f"Scénarios disponibles : {list(SCENARIOS)}"
         )
 
-    if LGBMClassifier is None:
-        raise ImportError(
-            "LightGBM n'est pas installé."
-        )
-
     if parameter_grid is None:
-        parameter_grid = {
-            "class_weight": (None, "balanced"),
-            "n_estimators": (50, 400),
-            "learning_rate": (0.02, 0.05),
-            "num_leaves": (24, 27),
-            "min_child_samples": (10, 40),
-            "colsample_bytree": (0.5, 0.7),
-        }
+        parameter_grid = [
+            {
+                "n_estimators": [200, 400],
+                "learning_rate": [0.03, 0.1],
+                "max_depth": [3, 6],
+                "min_child_weight": [1, 3],
+                "subsample": [0.9],
+                "colsample_bytree": [0.9],
+            },
+        ]
 
-    parameter_names = (
-        "class_weight",
-        "n_estimators",
-        "learning_rate",
-        "num_leaves",
-        "min_child_samples",
-        "colsample_bytree",
-    )
-    missing_parameters = set(parameter_names) - set(parameter_grid)
-
-    if missing_parameters:
-        raise ValueError(
-            "Grille incomplète. Paramètres absents : "
-            f"{sorted(missing_parameters)}"
-        )
-
-    class_counts = y_train.value_counts()
-    effective_folds = min(
-        cv_folds,
-        int(class_counts.min()),
-    )
-
+    class_counts = pd.Series(y_train).value_counts()
+    effective_folds = min(cv_folds, int(class_counts.min()))
     if effective_folds < 2:
         raise ValueError(
             "La validation croisée exige au moins deux observations "
             "dans chaque classe."
         )
 
-    cv = StratifiedKFold(
-        n_splits=effective_folds,
-        shuffle=True,
-        random_state=RANDOM_STATE,
+    estimator = build_training_pipeline(
+        model_type="xgboost",
+        scenario_name=scenario_name,
+        config_name="default",
     )
+    estimator.set_params(
+        classifier__n_jobs=1
+    )
+    sample_weights = np.where(
+        np.asarray(y_train) == 2,
+        2.5,
+        1.0,
+    )
+    prefixed_grid = [
+        {
+            f"classifier__{name}": values
+            for name, values in parameters.items()
+        }
+        for parameters in parameter_grid
+    ]
     scoring = {
         "f1_macro": make_scorer(
             f1_score,
             average="macro",
             zero_division=0,
         ),
-        "recall_c2": make_scorer(_recall_class_2),
-        "precision_c2": make_scorer(_precision_class_2),
-        "f1_c2": make_scorer(_f1_class_2),
-        "critical_2_to_0": make_scorer(
+        "recall_class_2": make_scorer(_recall_class_2),
+        "f1_class_2": make_scorer(_f1_class_2),
+        "error_2_to_0": make_scorer(
             _critical_error_2_to_0,
             greater_is_better=False,
         ),
-        "neg_log_loss": "neg_log_loss",
+        "error_0_to_2": make_scorer(
+            _critical_error_0_to_2,
+            greater_is_better=False,
+        ),
     }
-    rows: list[dict[str, Any]] = []
-
-    for values in product(
-        *(parameter_grid[name] for name in parameter_names)
-    ):
-        parameters = dict(
-            zip(
-                parameter_names,
-                values,
-            )
-        )
-        parameters.update(
-            {
-                "objective": "multiclass",
-                "num_class": len(CLASS_LABELS),
-                "verbosity": -1,
-                "random_state": RANDOM_STATE,
-                "n_jobs": 1,
-            }
-        )
-
-        pipeline = build_training_pipeline(
-            model_type="lightgbm",
-            scenario_name=scenario_name,
-            config_name="default",
-            classifier_parameters=parameters,
-        )
-
-        scores = cross_validate(
-            pipeline,
-            X_train,
-            y_train,
-            cv=cv,
-            scoring=scoring,
-            error_score="raise",
-            n_jobs=1,
-        )
-
-        rows.append(
-            {
-                "scenario": scenario_name,
-                "class_weight": parameters["class_weight"],
-                "n_estimators": parameters["n_estimators"],
-                "learning_rate": parameters["learning_rate"],
-                "num_leaves": parameters["num_leaves"],
-                "min_child_samples": parameters["min_child_samples"],
-                "colsample_bytree": parameters["colsample_bytree"],
-                "f1_macro": float(scores["test_f1_macro"].mean()),
-                "f1_macro_std": float(scores["test_f1_macro"].std()),
-                "recall_c2": float(scores["test_recall_c2"].mean()),
-                "precision_c2": float(
-                    scores["test_precision_c2"].mean()
-                ),
-                "f1_c2": float(scores["test_f1_c2"].mean()),
-                "critical_2_to_0": float(
-                    max(
-                        0.0,
-                        -scores["test_critical_2_to_0"].mean(),
-                    )
-                ),
-                "log_loss": float(
-                    -scores["test_neg_log_loss"].mean()
-                ),
-            }
-        )
-
-    results = pd.DataFrame(rows).sort_values(
-        ["f1_macro", "critical_2_to_0", "recall_c2"],
-        ascending=[False, True, False],
-        ignore_index=True,
+    cv = StratifiedKFold(
+        n_splits=effective_folds,
+        shuffle=True,
+        random_state=RANDOM_STATE,
     )
-    results["selected"] = False
+    grid_search = GridSearchCV(
+        estimator=estimator,
+        param_grid=prefixed_grid,
+        scoring=scoring,
+        refit=_select_best_grid_search_candidate,
+        cv=cv,
+        n_jobs=n_jobs,
+        error_score="raise",
+    )
+    grid_search.fit(
+        X_train,
+        y_train,
+        classifier__sample_weight=sample_weights,
+    )
 
-    if not results.empty:
-        results.loc[0, "selected"] = True
-        best_f1_macro = results.loc[0, "f1_macro"]
-        results["analysis"] = results.apply(
-            lambda row: (
-                "Retenu : meilleur F1 macro CV."
-                if row["selected"]
-                else (
-                    "F1 macro inférieur de "
-                    f"{best_f1_macro - row['f1_macro']:.3f} "
-                    "par rapport au réglage retenu."
-                )
-            ),
-            axis=1,
-        )
+    return grid_search, _summarize_grid_search_results(grid_search)
 
-    return results
+
+
+
 
 
 # =============================================================================
@@ -2990,7 +2755,6 @@ def print_training_summary(
     scenario_labels = {
         "multimodal_complet": "Multimodal complet",
         "multimodal_ethique": "Multimodal éthique",
-        "multimodal_ethique_renforce": "Multimodal éthique renforcé",
         "texte_seul": "Texte seul",
         "tabulaire_seul": "Tabulaire seul",
     }

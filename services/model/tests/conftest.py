@@ -31,7 +31,6 @@ def client():
 def valid_payload() -> dict:
     """Une demande d'emploi valide alignée sur LoanApplication."""
     return {
-        "age": 35,
         "niveau_diplome": "Bac+2",
         "anciennete_poste_ans": 3.0,
         "code_rome_vise": "M1805",

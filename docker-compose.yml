@@ -3,16 +3,41 @@
 # À vous d'ajouter `backend` et `frontend` (cf. TODO).
 
 services:
+  mlflow:
+    image: ghcr.io/mlflow/mlflow:v2.17.2
+    command: >-
+      mlflow server
+      --host 0.0.0.0
+      --port 5000
+      --backend-store-uri sqlite:////mlflow-data/mlflow.db
+      --artifacts-destination /mlflow-artifacts
+    ports:
+      - "5000:5000"
+    volumes:
+      - mlflow_backend:/mlflow-data
+      - mlflow_artifacts:/mlflow-artifacts
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:5000/version')"]
+      interval: 10s
+      timeout: 5s
+      start_period: 20s
+      retries: 5
+
   model:
     build: ./services/model
+    image: "${IMAGE_PREFIX:-cisia-emploi}/model:${IMAGE_TAG:-latest}"
     ports:
       - "8000:8000"
     environment:
-      MLFLOW_TRACKING_URI: "file:/app/mlruns"
-      MODEL_ARTIFACT: "${MODEL_ARTIFACT:-/app/models/cisia_emploi_xgboost_multimodal_complet_balanced.joblib}"
+      MLFLOW_TRACKING_URI: "${MLFLOW_TRACKING_URI:-http://mlflow:5000}"
+      MODEL_ARTIFACT: "${MODEL_ARTIFACT:-/app/models/cisia_emploi_xgboost_multimodal_ethique_best_class_2_ethique.joblib}"
+      ALLOW_DIRECT_TRAIN: "${ALLOW_DIRECT_TRAIN:-false}"
     volumes:
       - ./mlruns:/app/mlruns
       - ./services/model/models:/app/models:ro
+    depends_on:
+      mlflow:
+        condition: service_healthy
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://localhost:8000/health').status==200 else 1)"]
       interval: 10s
@@ -26,14 +51,18 @@ services:
   #   healthcheck sur /health.
   backend:
     build: ./services/backend
+    image: "${IMAGE_PREFIX:-cisia-emploi}/backend:${IMAGE_TAG:-latest}"
     ports:
       - "8001:8001"
     environment:
       MODEL_URL: "http://model:8000"
       ALLOWED_ORIGINS: "http://frontend,http://127.0.0.1:8088"
       FEEDBACK_DB: "/app/data/feedbacks.db"
+      USER_REGISTRY_URL: "${USER_REGISTRY_URL:-}"
+      USER_REGISTRY_TIMEOUT_SECONDS: "${USER_REGISTRY_TIMEOUT_SECONDS:-2}"
     volumes:
       - feedback_data:/app/data
+      - ./reports:/app/reports:ro
     depends_on:
       model:
         condition: service_healthy
@@ -59,6 +88,7 @@ services:
   #   résout ::1 en premier → connection refused, service `unhealthy`.
   frontend:
     build: ./services/frontend
+    image: "${IMAGE_PREFIX:-cisia-emploi}/frontend:${IMAGE_TAG:-latest}"
     ports:
       - "8088:80"
     depends_on:
@@ -107,10 +137,18 @@ services:
       dockerfile: services/retrainer/Dockerfile
     environment:
       FEEDBACK_DB: "/app/feedback-data/feedbacks.db"
+      DECISION_LOG: "/app/reports/decisions_log.jsonl"
+      MLFLOW_TRACKING_URI: "${MLFLOW_TRACKING_URI:-http://mlflow:5000}"
     volumes:
       - feedback_data:/app/feedback-data
       - ./services/model/models:/app/services/model/models
+      - ./reports:/app/reports
     restart: "no"
+    depends_on:
+      mlflow:
+        condition: service_healthy
 
 volumes:
   feedback_data:
+  mlflow_backend:
+  mlflow_artifacts:

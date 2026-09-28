@@ -12,7 +12,6 @@ if str(SRC_DIR) not in sys.path:
 
 from config import SCENARIOS
 from preprocess import (
-    PROXY_FEATURES,
     SENSITIVE_FEATURES,
     TEXT_FEATURE,
     build_preprocessor,
@@ -64,33 +63,6 @@ def test_print_variables_scenario_2() -> None:
 
     assert list(observed_features.columns) == expected_features
     for feature in SENSITIVE_FEATURES:
-        assert feature not in observed_features.columns
-
-
-def test_print_variables_scenario_2bis() -> None:
-    """Affiche et vérifie les variables du scénario éthique renforcé (S2 bis)."""
-    scenario = SCENARIOS["multimodal_ethique_renforce"]
-    expected_features = get_all_features(
-        include_sensitive=scenario["include_sensitive"],
-        include_text=scenario["include_text"],
-        features=scenario.get("features"),
-    )
-    observed_features, _ = load_dataset(
-        DATA_PATH,
-        include_sensitive=scenario["include_sensitive"],
-        include_text=scenario["include_text"],
-        features=scenario.get("features"),
-    )
-
-    print("\nScénario 2 bis : multimodal_ethique_renforce")
-    print(f"Variables ({len(expected_features)}) :")
-    for feature in expected_features:
-        print(f"- {feature}")
-
-    assert list(observed_features.columns) == expected_features
-    for feature in SENSITIVE_FEATURES:
-        assert feature not in observed_features.columns
-    for feature in PROXY_FEATURES:
         assert feature not in observed_features.columns
 
 

@@ -9,9 +9,24 @@
     label { display: block; margin: .7rem 0 .2rem; font-size: .9rem; }
     input, select, textarea { width: 100%; padding: .55rem; box-sizing: border-box; }
     textarea { min-height: 120px; resize: vertical; }
+    .checkbox-row { display: flex; flex-wrap: wrap; gap: 2rem; margin-top: 1rem; }
+    .checkbox-label { display: flex; align-items: center; gap: .5rem; margin: 0; }
+    .checkbox-label input { width: auto; }
+    .hint { color: #57606a; font-size: .8rem; }
     button { margin-top: 1rem; padding: .7rem 1.2rem; font-size: 1rem; cursor: pointer; }
     #result { margin-top: 1rem; padding: 1rem; border-radius: 8px; display: none; }
-    #feedbackPanel { margin-top: 1rem; padding: 1rem; border: 1px solid #d0d7de; border-radius: 8px; display: none; }
+    #feedbackPanel { width: min(520px, 92vw); padding: 1.2rem; border: 1px solid #d0d7de; border-radius: 8px; }
+    #feedbackPanel::backdrop { background: rgba(0, 0, 0, .45); }
+    .dialog-header { display: flex; justify-content: space-between; align-items: center; }
+    .dialog-header h2 { margin: 0; font-size: 1.2rem; }
+    #closeFeedback { margin: 0; padding: .2rem .6rem; font-size: 1.2rem; }
+    #historyPanel { margin-top: 1rem; overflow-x: auto; display: none; width: min(1400px, 96vw); position: relative; left: 50%; transform: translateX(-50%); }
+    table { width: 100%; border-collapse: collapse; font-size: .85rem; }
+    th, td { border: 1px solid #d0d7de; padding: .45rem; text-align: left; white-space: nowrap; }
+    td.long-text { white-space: normal; min-width: 260px; }
+    #historyScope { width: auto; margin-bottom: .6rem; }
+    .link-button { margin: 0; padding: 0; font: inherit; font-family: monospace; color: #0969da; background: none; border: none; text-decoration: underline; cursor: pointer; }
+    tr.selected { background: #fff8c5; }
     #requestId { font-family: monospace; background: #f6f8fa; padding: .2rem .4rem; }
     #feedbackStatus { min-height: 1.2rem; margin-bottom: 0; }
     .ok { background: #e6f4ea; } .ko { background: #fce8e6; }
@@ -21,10 +36,11 @@
   <h1>Orientation vers le retour a l'emploi</h1>
   <p>Évaluez le délai probable de retour à l'emploi.</p>
 
-  <form id="scoreForm">
-    <label for="age">Age</label>
-    <input type="number" id="age" name="age" min="16" max="100" value="35" required>
+  <label for="usager_id">Identifiant usager</label>
+  <input type="text" id="usager_id" name="usager_id" maxlength="100" value="Joelle" placeholder="Identifiant du référentiel national" required>
+  <p id="sessionInfo" aria-live="polite"></p>
 
+  <form id="scoreForm">
     <label for="niveau_diplome">Niveau de diplôme</label>
     <select id="niveau_diplome" name="niveau_diplome" required>
       <option>Sans diplôme</option>
@@ -49,12 +65,12 @@
       <option value="K1304">K1304 - Services domestiques</option>
       <option value="G1203">G1203 - Animation de loisirs divers</option>
     </select>
-
-    <label for="est_allocataire">Allocataire</label>
-    <select id="est_allocataire" name="est_allocataire" required>
-      <option value="1" selected>Oui</option>
-      <option value="0">Non</option>
-    </select>
+    <div class="checkbox-row">
+      <label class="checkbox-label" for="est_allocataire">
+        <input type="checkbox" id="est_allocataire" name="est_allocataire" value="1">
+        Allocataire
+      </label>
+    </div>
 
     <label for="departement">Département</label>
     <select id="departement" name="code_insee_commune" required>
@@ -169,8 +185,11 @@
 
   <div id="result"></div>
 
-  <section id="feedbackPanel" aria-labelledby="feedbackTitle">
-    <h2 id="feedbackTitle">Confirmer le résultat observé</h2>
+  <dialog id="feedbackPanel" aria-labelledby="feedbackTitle">
+    <div class="dialog-header">
+      <h2 id="feedbackTitle">Confirmer le résultat observé</h2>
+      <button type="button" id="closeFeedback" aria-label="Fermer">&times;</button>
+    </div>
     <p>Dossier scoré : <strong id="requestId"></strong></p>
     <form id="feedbackForm">
       <label for="trueLabel">Résultat réel du dossier</label>
@@ -184,6 +203,26 @@
       <button type="submit">Enregistrer le résultat</button>
       <p id="feedbackStatus" role="status" aria-live="polite"></p>
     </form>
+  </dialog>
+
+  <button type="button" id="toggleHistory" aria-controls="historyPanel" aria-expanded="false">Voir l'historique des inférences</button>
+
+  <section id="historyPanel" aria-labelledby="historyTitle">
+    <h2 id="historyTitle">Historique des inférences</h2>
+    <p>Cliquez sur un Request ID pour saisir le résultat réel du dossier.</p>
+    <label for="historyScope">Afficher</label>
+    <select id="historyScope">
+      <option value="session" selected>Session en cours</option>
+      <option value="all">Toutes les sessions</option>
+    </select>
+    <table>
+      <thead><tr>
+        <th>Date</th><th>Session</th><th>Usager</th><th>Diplôme</th><th>Ancienneté (ans)</th>
+        <th>Code ROME</th><th>Allocataire</th><th>Département</th><th>Synthèse de l'entretien</th>
+        <th>Prédiction</th><th>Probabilités</th><th>Modèle</th><th>Request ID</th><th>Résultat réel</th><th>Commentaire</th>
+      </tr></thead>
+      <tbody id="historyBody"><tr><td colspan="15">Aucune inférence dans cette session.</td></tr></tbody>
+    </table>
   </section>
 
   <script>
@@ -195,9 +234,129 @@
     const trueLabel = document.getElementById('trueLabel');
     const feedbackComments = document.getElementById('feedbackComments');
     const feedbackStatus = document.getElementById('feedbackStatus');
+    const userId = document.getElementById('usager_id');
+    const sessionInfo = document.getElementById('sessionInfo');
+    const historyBody = document.getElementById('historyBody');
+    const historyPanel = document.getElementById('historyPanel');
+    const toggleHistory = document.getElementById('toggleHistory');
+    const historyScope = document.getElementById('historyScope');
     const labels = { 0: 'Retour rapide', 1: 'Retour moyen', 2: 'Risque de chômage longue durée' };
+    const sessionId = localStorage.getItem('cisia_session_id') || crypto.randomUUID();
+    localStorage.setItem('cisia_session_id', sessionId);
+    sessionInfo.textContent = `Session conseiller : ${sessionId}`;
     let scoredRequestId = null;
     let scoredPrediction = null;
+
+    function formatError(body, status) {
+      const detail = body && body.detail;
+      if (Array.isArray(detail)) {
+        return detail.map((item) => `${(item.loc || []).slice(1).join('.')} : ${item.msg}`).join(' ; ');
+      }
+      return detail || `HTTP ${status}`;
+    }
+
+    function openFeedback(requestId, prediction, knownTrueLabel = null) {
+      scoredRequestId = requestId;
+      scoredPrediction = prediction;
+      requestIdElement.textContent = requestId;
+      feedbackForm.querySelectorAll('select, textarea, button').forEach((element) => {
+        element.disabled = false;
+      });
+      feedbackComments.value = '';
+      if (knownTrueLabel !== null && knownTrueLabel !== undefined) {
+        trueLabel.value = String(knownTrueLabel);
+        feedbackStatus.textContent = `Résultat déjà enregistré : ${labels[knownTrueLabel]}.`;
+        feedbackForm.querySelectorAll('select, textarea, button').forEach((element) => {
+          element.disabled = true;
+        });
+      } else {
+        trueLabel.value = String(prediction);
+        feedbackStatus.textContent = '';
+      }
+      feedbackPanel.showModal();
+      historyBody.querySelectorAll('tr').forEach((row) => {
+        row.classList.toggle('selected', row.dataset.requestId === requestId);
+      });
+    }
+
+    async function loadHistory() {
+      const query = historyScope.value === 'all'
+        ? 'limit=200'
+        : `session_id=${encodeURIComponent(sessionId)}&limit=200`;
+      const response = await fetch(`/api/history?${query}`);
+      if (!response.ok) return;
+      const entries = await response.json();
+      historyBody.replaceChildren();
+      if (!entries.length) {
+        const emptyRow = document.createElement('tr');
+        const emptyCell = document.createElement('td');
+        emptyCell.colSpan = 15;
+        emptyCell.textContent = historyScope.value === 'all'
+          ? 'Aucune inférence enregistrée.'
+          : 'Aucune inférence dans cette session.';
+        emptyRow.appendChild(emptyCell);
+        historyBody.appendChild(emptyRow);
+        return;
+      }
+      entries.forEach((entry) => {
+        const row = document.createElement('tr');
+        row.dataset.requestId = entry.request_id;
+        row.classList.toggle('selected', entry.request_id === scoredRequestId);
+        const inputs = entry.inputs || {};
+        const codeInsee = String(inputs.code_insee_commune || '');
+        const addCell = (value, className) => {
+          const cell = document.createElement('td');
+          cell.textContent = value === null || value === undefined || value === '' ? '-' : value;
+          if (className) cell.className = className;
+          row.appendChild(cell);
+        };
+        addCell(new Date(entry.created_at).toLocaleString());
+        addCell(entry.session_id === sessionId ? 'En cours' : (entry.session_id || '').slice(0, 8));
+        addCell(entry.usager_id);
+        addCell(inputs.niveau_diplome);
+        addCell(inputs.anciennete_poste_ans);
+        addCell(inputs.code_rome_vise);
+        addCell(inputs.est_allocataire === undefined ? null : (Number(inputs.est_allocataire) === 1 ? 'Oui' : 'Non'));
+        addCell(codeInsee.startsWith('97') ? codeInsee.slice(0, 3) : codeInsee.slice(0, 2));
+        addCell(inputs.synthese_entretien, 'long-text');
+        addCell(labels[entry.prediction] || entry.prediction);
+        addCell(Object.entries(entry.probabilities).map(([key, value]) => `${key}: ${(value * 100).toFixed(1)}%`).join(' | '));
+        addCell(entry.model_version);
+
+        const requestCell = document.createElement('td');
+        const requestButton = document.createElement('button');
+        requestButton.type = 'button';
+        requestButton.className = 'link-button';
+        requestButton.textContent = entry.request_id;
+        requestButton.title = 'Saisir le résultat réel de ce dossier';
+        requestButton.addEventListener('click', () => {
+          openFeedback(entry.request_id, entry.prediction, entry.true_label);
+        });
+        requestCell.appendChild(requestButton);
+        row.appendChild(requestCell);
+
+        const feedbackCell = document.createElement('td');
+        feedbackCell.textContent = entry.true_label === null || entry.true_label === undefined
+          ? 'À renseigner'
+          : labels[entry.true_label];
+        row.appendChild(feedbackCell);
+        addCell(entry.comments, 'long-text');
+        historyBody.appendChild(row);
+      });
+    }
+
+    historyScope.addEventListener('change', () => loadHistory().catch(() => {}));
+    document.getElementById('closeFeedback').addEventListener('click', () => feedbackPanel.close());
+
+    toggleHistory.addEventListener('click', () => {
+      const visible = historyPanel.style.display === 'block';
+      historyPanel.style.display = visible ? 'none' : 'block';
+      toggleHistory.setAttribute('aria-expanded', String(!visible));
+      toggleHistory.textContent = visible ? "Voir l'historique des inférences" : "Masquer l'historique";
+      if (!visible) loadHistory().catch(() => {});
+    });
+
+    loadHistory().catch(() => {});
 
     form.addEventListener('submit', async (event) => {
       event.preventDefault();
@@ -207,11 +366,10 @@
         ? `${departement}000`
         : departement;
       const payload = {
-        age: Number(data.get('age')),
         niveau_diplome: data.get('niveau_diplome'),
         anciennete_poste_ans: Number(data.get('anciennete_poste_ans')),
         code_rome_vise: data.get('code_rome_vise'),
-        est_allocataire: Number(data.get('est_allocataire')),
+        est_allocataire: document.getElementById('est_allocataire').checked ? 1 : 0,
         code_insee_commune: codeInseeCompatible,
         synthese_entretien: data.get('synthese_entretien')
       };
@@ -219,28 +377,25 @@
       try {
         const response = await fetch('/api/score', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(payload)
+          headers: { 'Content-Type': 'application/json', 'X-Session-ID': sessionId },
+          body: JSON.stringify({
+            ...payload,
+            usager_id: userId.value.trim() || null,
+            session_id: sessionId
+          })
         });
         const body = await response.json();
-        if (!response.ok) throw new Error(body.detail || `HTTP ${response.status}`);
+        if (!response.ok) throw new Error(formatError(body, response.status));
 
         const probabilities = Object.entries(body.probabilities)
           .map(([key, value]) => `${labels[key]} : ${(value * 100).toFixed(1)}%`)
           .join(' | ');
         result.textContent = `${labels[body.prediction]} - ${probabilities} (modèle ${body.model_version})`;
         result.className = body.prediction === 2 ? 'ko' : 'ok';
-        scoredRequestId = body.request_id;
-        scoredPrediction = body.prediction;
-        requestIdElement.textContent = scoredRequestId;
-        trueLabel.value = String(scoredPrediction);
-        feedbackComments.value = '';
-        feedbackStatus.textContent = '';
-        feedbackPanel.style.display = 'block';
+        loadHistory().catch(() => {});
       } catch (error) {
         result.textContent = `Erreur : ${error.message}`;
         result.className = 'ko';
-        feedbackPanel.style.display = 'none';
       }
       result.style.display = 'block';
     });
@@ -264,13 +419,14 @@
           })
         });
         const body = await response.json();
-        if (!response.ok) throw new Error(body.detail || `HTTP ${response.status}`);
+        if (!response.ok) throw new Error(formatError(body, response.status));
         feedbackStatus.textContent = body.status === 'already_registered'
           ? 'Ce résultat avait déjà été enregistré.'
           : 'Résultat enregistré pour la boucle de feedback.';
         feedbackForm.querySelectorAll('select, textarea, button').forEach((element) => {
           element.disabled = true;
         });
+        loadHistory().catch(() => {});
       } catch (error) {
         feedbackStatus.textContent = `Erreur : ${error.message}`;
         submitButton.disabled = false;

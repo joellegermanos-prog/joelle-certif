@@ -11,6 +11,8 @@
 | `reference_set_TEMPLATE.csv` | **Exemple de format uniquement** — 20 lignes. Montre les colonnes attendues et leur ordre. Ce n'est **pas** un jeu de référence : 20 lignes ne mesurent rien. Ne le copiez pas en `reference_set.csv`. |
 | `reference_set.csv` | **À produire par vous** (~500 lignes), à partir du holdout M1. Versionné avec un commit dédié. |
 | `reference_baseline.json` | **À produire par vous**, une seule fois, via `evaluate_model.py --freeze-baseline`. C'est le *golden run*. |
+| `prod_3months.csv` | Échantillon de production CISIA reproductible sur janvier-mars 2026, généré depuis `dataset_trajectoire_emploi.csv` pour tester le drift. |
+| `predictions_log.csv` | Journal compact des prédictions CISIA correspondant à `prod_3months.csv`, avec probabilités multiclasses et labels différés. |
 
 ## Étape 0 — récupérer le holdout M1
 
@@ -52,3 +54,21 @@ v1 »*), et **on n'y touche plus** tant que le modèle est en v2.0 — un jeu de
 référence qui bouge rend les métriques incomparables d'une release à l'autre.
 
 📚 Mini-cours : [`../ressources/08_Evaluation_continue_seuils_essentiel.md`](../ressources/08_Evaluation_continue_seuils_essentiel.md)
+
+## Jeu de production pour le drift
+
+`prod_3months.csv` contient 3 000 observations CISIA datées du 1er janvier au
+31 mars 2026. Il reprend les colonnes du jeu métier, ajoute `timestamp`,
+`prediction` et `proba_0`/`proba_1`/`proba_2`, et conserve la classe réelle pour
+les analyses différées de calibration et de concept drift.
+
+`predictions_log.csv` reprend ces mêmes événements sous une forme adaptée au
+monitoring : `request_id`, `timestamp`, `prediction`, `proba_0`, `proba_1`,
+`proba_2` et `classe_retour_emploi`.
+
+Le fichier est généré avec une graine fixe et un léger déplacement progressif
+de l'âge, de l'ancienneté, du niveau de diplôme et du statut allocataire :
+
+```powershell
+python scripts/generate_prod_3months.py
+```

@@ -546,6 +546,10 @@ def evaluate_model(
             confusion[2, 0]
         ),
 
+        "erreur_critique_0_vers_2": int(
+            confusion[0, 2]
+        ),
+
         "confusion_matrix": confusion.tolist(),
 
         "classification_report": (

@@ -67,6 +67,10 @@ def print_metrics(metrics: dict[str, Any], report_text: str) -> None:
         "Erreur critique 2 -> 0 : "
         f"{metrics['erreur_critique_2_vers_0']}"
     )
+    print(
+        "Erreur critique 0 -> 2 : "
+        f"{metrics['erreur_critique_0_vers_2']}"
+    )
     print(f"Latence p95       : {metrics['latency_p95_ms']:.3f} ms")
     print(
         "Temps CPU / 1 000 prédictions : "
@@ -105,16 +109,16 @@ def create_benchmark(results: list[dict[str, Any]], output_path: Path) -> pd.Dat
                     "erreur_critique_2_vers_0",
                     np.nan,
                 ),
+                "erreur_critique_0_vers_2": metrics.get(
+                    "erreur_critique_0_vers_2",
+                    np.nan,
+                ),
                 #"f1_weighted": metrics["f1_weighted"],
                 #"f1_classe_0": metrics["f1_class_0"],
                 #"f1_classe_1": metrics["f1_class_1"],
                 "f1_classe_2": metrics["f1_class_2"],
                 "roc_auc_ovr_macro": metrics["roc_auc_ovr_macro"],
-                "latency_mean_ms": metrics["latency_mean_ms"],
-                "latency_median_ms": metrics["latency_median_ms"],
                 "latency_p95_ms": metrics["latency_p95_ms"],
-                "cpu_mean_ms": metrics["cpu_mean_ms"],
-                "cpu_p95_ms": metrics["cpu_p95_ms"],
                 "cpu_seconds_1000_predictions": metrics[
                     "cpu_seconds_1000_predictions"
                 ],
@@ -201,9 +205,8 @@ def print_benchmark(benchmark: pd.DataFrame) -> None:
         "recall_classe_2",
         "precision_classe_2",
         "erreur_critique_2_vers_0",
+        "erreur_critique_0_vers_2",
         "roc_auc_ovr_macro",
-        "latency_mean_ms",
-        "latency_median_ms",
         "latency_p95_ms",
         "cpu_seconds_1000_predictions",
     ]
@@ -211,10 +214,10 @@ def print_benchmark(benchmark: pd.DataFrame) -> None:
     print_banner("BENCHMARK GLOBAL CISIA", width=130)
     display_benchmark = benchmark[columns_to_display].rename(
         columns={
-            "latency_mean_ms": "latence_moyenne_ms",
-            "latency_median_ms": "latence_mediane_ms",
-            "latency_p95_ms": "latence_p95_ms",
-            "cpu_seconds_1000_predictions": "cpu_s_1000_predictions",
+            "latency_p95_ms": "Latence p95 (ms)",
+            "cpu_seconds_1000_predictions": (
+                "Coût inférence (CPU·s / 1000 prédictions)"
+            ),
         }
     )
     print(display_benchmark.round(4).to_string(index=False))

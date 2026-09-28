@@ -15,14 +15,17 @@ import os
 import sqlite3
 from datetime import datetime, timezone
 from pathlib import Path
+from uuid import uuid4
 
 import httpx
-from fastapi import FastAPI, HTTPException, Request, status
+from fastapi import FastAPI, HTTPException, Query, Request, status
+from fastapi.responses import PlainTextResponse
 from fastapi.middleware.cors import CORSMiddleware
 from prometheus_client import Counter, Histogram
 from prometheus_fastapi_instrumentator import Instrumentator
 
 from app.middleware import LoggingMiddleware
+from app.registry import UserRegistryClient, UserRegistryError
 from app.schemas import (
     EmploymentApplication,
     Feedback,
@@ -35,6 +38,9 @@ from app.schemas import (
 # URL du service model — configurable par variable d'env (dev/staging/prod)
 MODEL_URL = os.environ.get("MODEL_URL", "http://model:8000")
 ALLOWED_ORIGINS = os.environ.get("ALLOWED_ORIGINS", "http://localhost:8088").split(",")
+DRIFT_METRICS_FILE = Path(
+    os.environ.get("DRIFT_METRICS_FILE", "/app/reports/drift.prom")
+)
 
 
 def _feedback_db_path() -> Path:
@@ -51,6 +57,8 @@ def _init_feedback_db() -> None:
         connection.execute(
             """CREATE TABLE IF NOT EXISTS predictions (
                 request_id TEXT PRIMARY KEY,
+                usager_id TEXT,
+                session_id TEXT,
                 input_json TEXT NOT NULL,
                 prediction INTEGER NOT NULL,
                 probabilities_json TEXT NOT NULL,
@@ -58,6 +66,13 @@ def _init_feedback_db() -> None:
                 created_at TEXT NOT NULL
             )"""
         )
+        columns = {
+            row[1]
+            for row in connection.execute("PRAGMA table_info(predictions)")
+        }
+        for column in ("usager_id", "session_id"):
+            if column not in columns:
+                connection.execute(f"ALTER TABLE predictions ADD COLUMN {column} TEXT")
         connection.execute(
             """CREATE TABLE IF NOT EXISTS feedbacks (
                 request_id TEXT PRIMARY KEY,
@@ -73,7 +88,7 @@ def _init_feedback_db() -> None:
 
 _init_feedback_db()
 
-app = FastAPI(title="Pyrenex Backend Orchestrator", version="1.0.0")
+app = FastAPI(title="CISIA-Emploi Backend Orchestrator", version="1.0.0")
 app.add_middleware(LoggingMiddleware)
 app.add_middleware(
     CORSMiddleware,
@@ -117,6 +132,17 @@ Instrumentator(should_group_status_codes=False).instrument(app).expose(
 )
 
 
+@app.get("/drift-metrics", include_in_schema=False)
+async def drift_metrics() -> PlainTextResponse:
+    """Serve the latest batch drift report in Prometheus text format."""
+    if not DRIFT_METRICS_FILE.is_file():
+        return PlainTextResponse("", media_type="text/plain; version=0.0.4")
+    return PlainTextResponse(
+        DRIFT_METRICS_FILE.read_text(encoding="utf-8"),
+        media_type="text/plain; version=0.0.4",
+    )
+
+
 @app.get("/health", response_model=HealthResponse)
 async def health() -> HealthResponse:
     """Liveness du backend (ne dépend PAS du model)."""
@@ -138,14 +164,24 @@ async def health() -> HealthResponse:
 async def score(application: EmploymentApplication, request: Request) -> Prediction:
     """Valide la demande, l'envoie au modèle et renvoie le résultat."""
     request_id = getattr(request.state, "request_id", request.headers.get("X-Request-ID", "n/a"))
+    session_id = application.session_id or request.headers.get("X-Session-ID") or str(uuid4())
+
+    if application.usager_id and os.environ.get("USER_REGISTRY_URL"):
+        try:
+            await UserRegistryClient().ensure_user_exists(application.usager_id)
+        except UserRegistryError as exc:
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail=f"User registry unavailable: {exc}",
+            ) from exc
 
     try:
         async with httpx.AsyncClient(timeout=10.0) as client:
             with MODEL_CALL_DURATION_SECONDS.time():
                 response = await client.post(
                     f"{MODEL_URL.rstrip('/')}/predict",
-                    json=application.model_dump(),
-                    headers={"X-Request-ID": request_id},
+                    json=application.model_dump(exclude={"usager_id", "session_id"}),
+                    headers={"X-Request-ID": request_id, "X-Session-ID": session_id},
                 )
     except httpx.RequestError as exc:
         MODEL_UPSTREAM_ERRORS_TOTAL.labels(kind="unreachable").inc()
@@ -171,6 +207,8 @@ async def score(application: EmploymentApplication, request: Request) -> Predict
         ) from exc
 
     payload["request_id"] = request_id
+    payload["usager_id"] = application.usager_id
+    payload["session_id"] = session_id
 
     try:
         prediction = Prediction(**payload)
@@ -192,11 +230,13 @@ async def score(application: EmploymentApplication, request: Request) -> Predict
     with sqlite3.connect(_feedback_db_path()) as connection:
         connection.execute(
             """INSERT OR IGNORE INTO predictions
-            (request_id, input_json, prediction, probabilities_json,
-             model_version, created_at)
-            VALUES (?, ?, ?, ?, ?, ?)""",
+            (request_id, usager_id, session_id, input_json, prediction,
+             probabilities_json, model_version, created_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
             (
                 prediction.request_id,
+                application.usager_id,
+                session_id,
                 json.dumps(application.model_dump(), ensure_ascii=False),
                 prediction.prediction,
                 json.dumps(prediction.probabilities),
@@ -205,6 +245,54 @@ async def score(application: EmploymentApplication, request: Request) -> Predict
             ),
         )
     return prediction
+
+
+@app.get("/history")
+async def history(
+    session_id: str | None = None,
+    usager_id: str | None = None,
+    limit: int = Query(default=50, ge=1, le=200),
+) -> list[dict[str, object]]:
+    """Return recent predictions for a counselor session or user."""
+    _init_feedback_db()
+    clauses: list[str] = []
+    parameters: list[object] = []
+    if session_id:
+        clauses.append("p.session_id = ?")
+        parameters.append(session_id)
+    if usager_id:
+        clauses.append("p.usager_id = ?")
+        parameters.append(usager_id)
+    where = f"WHERE {' AND '.join(clauses)}" if clauses else ""
+    with sqlite3.connect(_feedback_db_path()) as connection:
+        rows = connection.execute(
+            f"""SELECT p.request_id, p.usager_id, p.session_id, p.prediction,
+                p.probabilities_json, p.model_version, p.created_at, f.true_label,
+                p.input_json, f.comments
+                FROM predictions AS p
+                LEFT JOIN feedbacks AS f ON f.request_id = p.request_id
+                {where} ORDER BY p.created_at DESC LIMIT ?""",
+            [*parameters, limit],
+        ).fetchall()
+    return [
+        {
+            "request_id": row[0],
+            "usager_id": row[1],
+            "session_id": row[2],
+            "prediction": row[3],
+            "probabilities": json.loads(row[4]),
+            "model_version": row[5],
+            "created_at": row[6],
+            "true_label": row[7],
+            "inputs": {
+                key: value
+                for key, value in json.loads(row[8]).items()
+                if key not in {"usager_id", "session_id"}
+            },
+            "comments": row[9],
+        }
+        for row in rows
+    ]
 
 
 @app.post("/feedback", status_code=status.HTTP_201_CREATED)

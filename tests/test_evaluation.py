@@ -11,12 +11,13 @@ if str(ROOT) not in sys.path:
 from scripts.evaluate_model import (
     check_thresholds,
     compute_metrics,
+    extract_model_hyperparameters,
     load_baseline,
     load_reference_set,
 )
 
-MODEL_PATH = ROOT / "services" / "model" / "models" / "cisia_emploi_xgboost_multimodal_complet_balanced.joblib"
-META_PATH = ROOT / "services" / "model" / "models" / "cisia_emploi_xgboost_multimodal_complet_balanced.json"
+MODEL_PATH = ROOT / "services" / "model" / "models" / "cisia_emploi_xgboost_multimodal_ethique_best_class_2_ethique.joblib"
+META_PATH = ROOT / "services" / "model" / "models" / "cisia_emploi_xgboost_multimodal_ethique_best_class_2_ethique.json"
 
 def test_reference_baseline_matches_current_model():
     model = joblib.load(MODEL_PATH)
@@ -65,6 +66,19 @@ def test_mlflow_params_are_loaded_from_model_metadata():
     assert params["hyperparameters.n_estimators"] == 200
     assert params["hyperparameters.max_depth"] == 10
     assert params["n_reference"] == 512
+
+
+def test_cisia_hyperparameters_are_loaded_from_configuration():
+    meta = {
+        "configuration": {
+            "model_parameters": {"n_estimators": 400, "max_depth": 6}
+        }
+    }
+
+    assert extract_model_hyperparameters(meta) == {
+        "n_estimators": 400,
+        "max_depth": 6,
+    }
 
 def test_release_gate_blocks_on_violation():
     baseline = {
