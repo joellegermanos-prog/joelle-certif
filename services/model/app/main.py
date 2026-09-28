@@ -1,4 +1,4 @@
-"""Service `model` — API de scoring CISIA-Emploi (fourni — votre exemple de référence).
+"""Service `model` — API de scoring Retour-Emploi (fourni — votre exemple de référence).
 
 Reprise de l'API M1-B2 (routes `/health`, `/info`, `/predict`) + ajout de
 l'endpoint `/metrics` Prometheus (latence/RPS/erreurs via instrumentator +
@@ -84,9 +84,9 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(
-    title="CISIA-Emploi Model Service",
+    title="Retour-Emploi Model Service",
     version="2.0.0",
-    description="Service interne de scoring CISIA-Emploi (retour à l'emploi).",
+    description="Service interne de scoring Retour-Emploi.",
     lifespan=lifespan,
 )
 app.add_middleware(LoggingMiddleware)

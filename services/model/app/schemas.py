@@ -1,6 +1,6 @@
-"""Pydantic schemas for the CISIA-Emploi API — fourni.
+"""Pydantic schemas for the Retour-Emploi API — fourni.
 
-Aligned with feature_columns from the CISIA-Emploi model metadata.
+Aligned with feature_columns from the Retour-Emploi model metadata.
 """
 from __future__ import annotations
 

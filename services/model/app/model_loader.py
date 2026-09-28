@@ -1,4 +1,4 @@
-"""Single source of truth for loading the CISIA-Emploi model.
+"""Single source of truth for loading the Retour-Emploi model.
 
 Used by three independent consumers:
 - ``app.main.lifespan``     — boot the API (long-running uvicorn process)
@@ -21,7 +21,7 @@ METADATA_FILENAME = "cisia_emploi_xgboost_multimodal_ethique_best_class_2_ethiqu
 
 
 def load_model_and_metadata(models_dir: Path) -> tuple[Any, dict]:
-    """Load the CISIA-Emploi model and its metadata from a models directory.
+    """Load the Retour-Emploi model and its metadata from a models directory.
 
     Args:
         models_dir: Directory containing ``MODEL_FILENAME`` and

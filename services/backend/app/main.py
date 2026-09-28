@@ -115,7 +115,7 @@ def _next_request_id() -> str:
 
 _init_feedback_db()
 
-app = FastAPI(title="CISIA-Emploi Backend Orchestrator", version="1.0.0")
+app = FastAPI(title="Retour-Emploi Backend Orchestrator", version="1.0.0")
 app.add_middleware(LoggingMiddleware)
 app.add_middleware(
     CORSMiddleware,

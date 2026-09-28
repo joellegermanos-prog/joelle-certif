@@ -1,7 +1,7 @@
 {
   "model_name": "cisia_emploi",
   "model_type": "xgboost",
-  "model_version": "promoted-20260928084711",
+  "model_version": "promoted-20260928230216",
   "scenario_name": "multimodal_ethique",
   "config_name": "best_class_2_ethique",
   "created_at_utc": "2026-09-27T08:07:16.246226+00:00",
@@ -3176,21 +3176,23 @@
     "baseline_model": "cisia_emploi_xgboost_multimodal_ethique_best_class_2_ethique.joblib"
   },
   "candidate_training": {
-    "rows": 2001,
-    "new_feedbacks": 1,
+    "rows": 2003,
+    "new_feedbacks": 3,
     "feedback_request_ids": [
-      "f8fdf8c7-d385-4aa6-8ae6-9b9ecd8953c1"
+      "REQ00007",
+      "REQ00006",
+      "REQ00005"
     ],
     "excluded_feedbacks_replaying_reference": 0,
     "metrics_train": {
-      "accuracy": 0.7136431784107946,
-      "f1_macro": 0.7025189260063865,
-      "recall_classe_2": 0.8099173553719008
+      "accuracy": 0.7139291063404892,
+      "f1_macro": 0.703264821506616,
+      "recall_classe_2": 0.8181818181818182
     }
   },
   "promotion": {
     "status": "promoted",
-    "new_feedbacks": 1,
+    "new_feedbacks": 3,
     "reference_set": "data/reference_set.csv",
     "metrics": {
       "accuracy": 0.668,
@@ -3198,7 +3200,7 @@
       "f1_classe_2": 0.5462962962962963,
       "recall_classe_2": 0.6555555555555556,
       "precision_classe_2": 0.46825396825396826,
-      "roc_auc_ovr_macro": 0.8162200741557678
+      "roc_auc_ovr_macro": 0.8156711341607741
     }
   }
 }
