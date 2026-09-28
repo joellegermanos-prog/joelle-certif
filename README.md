@@ -87,7 +87,7 @@ Vous repartez **chacun·e** du dépôt du binôme. Pas de nouveau dépôt.
 - [ ] `scripts/evaluate_model.py` — 4 métriques, ≥ 2 runs MLflow comparables
 - [ ] `evaluation_thresholds.md` — 4 métriques × golden run / plancher absolu / baisse max / **justification**, tolérance relative ≥ 2 σ (bootstrap)
 - [ ] Étape `evaluate-model` dans la CI : `--degrade` fait **échouer** la release
-      *(`mlruns/` est gitignoré : la preuve passe par l'**artefact CI**, pas par un commit)*
+  *(`mlruns/` est gitignoré : les métriques et violations sont publiées dans le résumé du run GitHub Actions)*
 
 ---
 

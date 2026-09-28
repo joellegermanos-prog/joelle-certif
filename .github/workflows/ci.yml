@@ -21,7 +21,7 @@ jobs:
       - name: Run Ruff
         run: ruff check services scripts tests
 
-  tests:
+  test:
     needs: lint
     runs-on: ubuntu-latest
     steps:
@@ -31,10 +31,6 @@ jobs:
           python-version: "3.11"
       - name: Install test dependencies
         run: pip install -r services/model/requirements.txt -r services/backend/requirements.txt pytest httpx
-      - name: Run unit tests
-        run: >-
-          pytest -v services/model/tests
-          -k "train_requires_at_least_ten_records or train_rejects_invalid_token or train_returns_mlflow_run"
       - name: Run model API tests
         run: >-
           pytest -v services/model/tests
@@ -44,63 +40,67 @@ jobs:
           pytest -v services/backend/tests
           -k "score_calls_model_and_returns_prediction or train_validates_minimum_records"
 
-  contract-tests:
-    needs: tests
+  train-validation:
+    needs: lint
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
           python-version: "3.11"
-      - name: Install contract-test dependencies
-        run: pip install -r services/model/requirements.txt pytest
+      - name: Install training and evaluation dependencies
+        run: pip install -r services/model/requirements.txt -r requirements-dev.txt pytest
+      - name: Run training validation tests
+        run: >-
+          pytest -v services/model/tests
+          -k "train_requires_at_least_ten_records or train_rejects_invalid_token or train_returns_mlflow_run"
       - name: Run model contract test
         run: pytest -v services/model/tests/test_api.py -k test_model_contract_features_and_output
-
-  model-evaluation:
-    needs: contract-tests
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
-        with:
-          python-version: "3.11"
-      - name: Install evaluation dependencies
-        run: pip install -r requirements-dev.txt
       - name: Run evaluation tests
         run: pytest -v tests/test_evaluation.py
       - name: Run model quality gate
-        run: python scripts/evaluate_model.py --release-tag ${{ github.ref_name }}
-      - name: Upload MLflow artefact
+        run: |
+          set -o pipefail
+          python scripts/evaluate_model.py --release-tag ${{ github.ref_name }} | tee evaluation-result.json
+      - name: Publish evaluation results in run summary
         if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: mlruns-${{ github.run_id }}
-          path: mlruns/
-          retention-days: 7
+        run: |
+          {
+            echo "## Model evaluation"
+            if [ -f evaluation-result.json ]; then
+              echo '```json'
+              cat evaluation-result.json
+              echo '```'
+            else
+              echo "Evaluation did not produce a result file."
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
 
-  build-images:
-    needs: model-evaluation
+  build-and-push:
+    needs: [test, train-validation]
     runs-on: ubuntu-latest
     permissions:
       contents: read
       packages: write
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - service: model
+            context: ./services/model
+          - service: backend
+            context: ./services/backend
+          - service: frontend
+            context: ./services/frontend
+    name: build-and-push (${{ matrix.service }})
     steps:
       - uses: actions/checkout@v4
       - uses: docker/setup-buildx-action@v3
       - name: Compute image name
+        id: image
         run: |
           REPO_LC=$(echo "${GITHUB_REPOSITORY}" | tr '[:upper:]' '[:lower:]')
-          echo "IMAGE_PREFIX=ghcr.io/${REPO_LC}" >> "$GITHUB_ENV"
-      - name: Build service images
-        run: |
-          for service in model backend frontend; do
-            docker build \
-              -t "${IMAGE_PREFIX}/${service}:${GITHUB_SHA}" \
-              -t "${IMAGE_PREFIX}/${service}:latest" \
-              -t "${IMAGE_PREFIX}/${service}:${GITHUB_REF_NAME}" \
-              "./services/${service}"
-          done
+          echo "name=ghcr.io/${REPO_LC}/${{ matrix.service }}" >> "$GITHUB_OUTPUT"
       - name: Log in to GHCR
         if: >-
           github.event_name == 'push' &&
@@ -110,17 +110,26 @@ jobs:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
-      - name: Push service images
-        if: >-
-          github.event_name == 'push' &&
-          (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v'))
-        run: |
-          for service in model backend frontend; do
-            docker push --all-tags "${IMAGE_PREFIX}/${service}"
-          done
+      - name: Generate image tags
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ steps.image.outputs.name }}
+          tags: |
+            type=sha
+            type=ref,event=branch
+            type=ref,event=tag
+            type=raw,value=latest,enable=${{ github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v') }}
+      - name: Build and push image
+        uses: docker/build-push-action@v6
+        with:
+          context: ${{ matrix.context }}
+          push: ${{ github.event_name == 'push' && (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v')) }}
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
 
-  deploy-on-prem:
-    needs: build-images
+  deploy:
+    needs: build-and-push
     if: >-
       github.event_name == 'push' &&
       github.ref == 'refs/heads/main'
@@ -158,7 +167,7 @@ jobs:
             docker compose ps model backend frontend
 
   release:
-    needs: build-images
+    needs: build-and-push
     if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-latest
     permissions:
@@ -175,18 +184,18 @@ jobs:
   notify-failure:
     needs:
       - lint
-      - tests
-      - contract-tests
-      - model-evaluation
-      - build-images
+      - test
+      - train-validation
+      - build-and-push
+      - deploy
       - release
     if: >-
       always() &&
       (needs.lint.result == 'failure' ||
-        needs.tests.result == 'failure' ||
-       needs.contract-tests.result == 'failure' ||
-       needs.model-evaluation.result == 'failure' ||
-      needs.build-images.result == 'failure' ||
+        needs.test.result == 'failure' ||
+       needs.train-validation.result == 'failure' ||
+      needs.build-and-push.result == 'failure' ||
+      needs.deploy.result == 'failure' ||
       needs.release.result == 'failure')
     runs-on: ubuntu-latest
     steps:
