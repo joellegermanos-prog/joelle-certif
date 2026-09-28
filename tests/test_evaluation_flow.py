@@ -15,6 +15,7 @@ SRC_DIR = PROJECT_ROOT / "src"
 if str(SRC_DIR) not in sys.path:
     sys.path.insert(0, str(SRC_DIR))
 
+import train as train_module
 from evaluate import (
     evaluate_model,
     load_text_dataset,
@@ -22,15 +23,14 @@ from evaluate import (
     validate_dataset,
 )
 from train import (
-    build_robustness_table,
-    build_fit_parameters,
-    compare_baseline_hyperparameters,
-    compute_stratified_cv_summary,
+    _critical_error_0_to_2,
     _select_best_grid_search_candidate,
     _summarize_grid_search_results,
-    _critical_error_0_to_2,
+    build_fit_parameters,
+    build_robustness_table,
+    compare_baseline_hyperparameters,
+    compute_stratified_cv_summary,
 )
-import train as train_module
 
 
 @pytest.mark.parametrize(
@@ -125,9 +125,8 @@ def test_default_grid_search_candidate_counts(
             return self
 
     class GridSearchSpy:
-        fit_parameters: list[dict[str, object]] = []
-
         def __init__(self, **kwargs: object) -> None:
+            self.fit_parameters: list[dict[str, object]] = []
             candidate_counts.append(
                 len(ParameterGrid(kwargs["param_grid"]))
             )

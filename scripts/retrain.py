@@ -24,6 +24,7 @@ import joblib
 import mlflow
 import numpy as np
 import pandas as pd
+from mlflow.exceptions import MlflowException
 from mlflow.tracking import MlflowClient
 from sklearn.metrics import accuracy_score, f1_score, recall_score
 from sklearn.pipeline import Pipeline
@@ -320,7 +321,7 @@ def production_identity() -> dict[str, object]:
         champion = MlflowClient().get_model_version_by_alias(REGISTERED_MODEL_NAME, "champion")
         registry["version"] = champion.version
         run_id = run_id or champion.run_id
-    except Exception as exc:  # registry absent or alias not set yet
+    except MlflowException as exc:  # registry absent or alias not set yet
         registry["error"] = type(exc).__name__
     return {
         "model_name": metadata.get("model_name"),
@@ -349,7 +350,7 @@ def register_candidate(candidate: Pipeline, decision_status: str) -> dict[str, o
         client.set_model_version_tag(REGISTERED_MODEL_NAME, version, "decision", decision_status)
         registry["version"] = version
         registry["model_uri"] = f"models:/{REGISTERED_MODEL_NAME}/{version}"
-    except Exception as exc:  # registry must not block the decision journal
+    except MlflowException as exc:  # registry must not block the decision journal
         registry["error"] = f"{type(exc).__name__}: {exc}"[:300]
     return registry
 

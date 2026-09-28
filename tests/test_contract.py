@@ -19,7 +19,6 @@ from __future__ import annotations
 
 import json
 import sys
-
 from pathlib import Path
 
 import joblib
@@ -32,7 +31,6 @@ if str(SRC_DIR) not in sys.path:
 
 from evaluation_utils import compute_sha256
 from preprocess import load_dataset
-
 
 MODEL_PATH = (
     PROJECT_ROOT

@@ -19,8 +19,8 @@ from uuid import uuid4
 
 import httpx
 from fastapi import FastAPI, HTTPException, Query, Request, status
-from fastapi.responses import PlainTextResponse
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import PlainTextResponse
 from prometheus_client import Counter, Histogram
 from prometheus_fastapi_instrumentator import Instrumentator
 

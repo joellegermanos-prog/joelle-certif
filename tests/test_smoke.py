@@ -16,18 +16,18 @@ import pytest
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
 
+from calibration import (
+    calibration_degraded,
+    expected_calibration_error,
+    reliability_table,
+)
 from drift_detection import (
     PSI_DRIFT,
     PSI_STABLE,
     population_stability_index,
     psi_verdict,
-)  # noqa: E402
-from calibration import (  # noqa: E402
-    calibration_degraded,
-    expected_calibration_error,
-    reliability_table,
 )
-from recommendations import DriftDiagnosis, diagnose_drift_type, recommend  # noqa: E402
+from recommendations import DriftDiagnosis, diagnose_drift_type, recommend
 
 
 def test_data_files_present():

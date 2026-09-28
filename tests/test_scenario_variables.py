@@ -142,7 +142,7 @@ def test_tabular_only_scenario_excludes_text() -> None:
 
 
 def test_preprocessor_accepts_scenario_flags() -> None:
-    X, y = load_dataset(DATA_PATH, include_sensitive=False, include_text=True)
+    X, _y = load_dataset(DATA_PATH, include_sensitive=False, include_text=True)
 
     preprocessor = build_preprocessor(include_sensitive=False, include_text=True)
     Xt = preprocessor.fit_transform(X)

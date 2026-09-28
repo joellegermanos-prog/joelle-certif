@@ -14,7 +14,6 @@ if str(SRC_DIR) not in sys.path:
 
 from preprocess import build_preprocessor, load_dataset
 
-
 DATA_PATH = PROJECT_ROOT / "data" / "dataset_trajectoire_emploi.csv"
 TARGET_COLUMN = "classe_retour_emploi"
 
@@ -75,7 +74,7 @@ def test_preprocessing_preserves_rows(
     prepared_data: tuple[pd.DataFrame, pd.DataFrame, pd.Series],
 ) -> None:
     _, X, y = prepared_data
-    X_train, X_test, y_train, y_test = train_test_split(
+    X_train, X_test, y_train, _y_test = train_test_split(
         X,
         y,
         test_size=0.2,
