@@ -166,21 +166,6 @@ jobs:
             IMAGE_PREFIX="$IMAGE_PREFIX" IMAGE_TAG="$IMAGE_TAG" docker compose up -d --no-build --force-recreate model backend frontend
             docker compose ps model backend frontend
 
-  release:
-    needs: build-and-push
-    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
-    runs-on: ubuntu-latest
-    permissions:
-      contents: write
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-      - name: Create GitHub release
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: gh release create "${GITHUB_REF_NAME}" --verify-tag --generate-notes
-
   notify-failure:
     needs:
       - lint
@@ -188,15 +173,13 @@ jobs:
       - train-validation
       - build-and-push
       - deploy
-      - release
     if: >-
       always() &&
       (needs.lint.result == 'failure' ||
         needs.test.result == 'failure' ||
        needs.train-validation.result == 'failure' ||
       needs.build-and-push.result == 'failure' ||
-      needs.deploy.result == 'failure' ||
-      needs.release.result == 'failure')
+      needs.deploy.result == 'failure')
     runs-on: ubuntu-latest
     steps:
       - name: Validate Discord secret
