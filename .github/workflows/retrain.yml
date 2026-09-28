@@ -33,15 +33,23 @@ jobs:
           MIN_FEEDBACK: ${{ inputs.min_feedback || '200' }}
         run: |
           python scripts/retrain.py --min-feedback "$MIN_FEEDBACK" | tee retrain-result.json
-      - name: Upload decision and candidate artifacts
+      - name: Publish retraining results in run summary
         if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: cisia-retrain-${{ github.run_id }}
-          path: |
-            retrain-result.json
-            decisions_log.jsonl
-            services/model/models/cisia_emploi_candidate.*
-            services/model/models/cisia_emploi_promoted.*
-          if-no-files-found: ignore
-          retention-days: 1
+        run: |
+          {
+            echo "## CISIA feedback retraining"
+            if [ -s retrain-result.json ]; then
+              echo "### Retraining result"
+              echo '```text'
+              cat retrain-result.json
+              echo '```'
+            else
+              echo "No retraining result was produced."
+            fi
+            if [ -s decisions_log.jsonl ]; then
+              echo "### Latest promotion decision"
+              echo '```json'
+              tail -n 1 decisions_log.jsonl
+              echo '```'
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
