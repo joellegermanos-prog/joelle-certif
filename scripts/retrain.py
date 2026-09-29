@@ -445,6 +445,17 @@ def write_promoted_metadata(candidate_metrics: dict[str, float], feedback_count:
     )
 
 
+def write_retrain_result(result: dict[str, object]) -> None:
+    """Persist and print the structured outcome for CI and local runs."""
+    result_path = Path(
+        os.environ.get("RETRAIN_RESULT_PATH", str(ROOT / "retrain-result.json"))
+    )
+    result_path.parent.mkdir(parents=True, exist_ok=True)
+    serialized = json.dumps(result, indent=2, ensure_ascii=False)
+    result_path.write_text(serialized, encoding="utf-8")
+    print(serialized)
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--min-feedback", type=int, default=200)
@@ -459,7 +470,14 @@ def main() -> int:
         print(f"Excluded {excluded_count} feedbacks replaying reference-set observations")
     feedback_count = len(feedbacks)
     if not should_retrain(feedback_count, args.min_feedback):
-        print(f"Skip retrain: {feedback_count} new feedbacks < {args.min_feedback}")
+        write_retrain_result(
+            {
+                "status": "skipped_low_volume",
+                "new_feedbacks": feedback_count,
+                "excluded_feedbacks": excluded_count,
+                "min_feedback": args.min_feedback,
+            }
+        )
         return 0
 
     X_train, y_train = build_training_data(feedbacks)
@@ -544,21 +562,21 @@ def main() -> int:
         write_promoted_metadata(candidate_reference_metrics, feedback_count)
 
     mark_feedbacks_consumed(read_request_ids)
-    print(
-        json.dumps(
-            {
-                "status": status,
-                "decision_id": record["decision_id"],
-                "mlflow_run_id": record["candidate"]["mlflow_run_id"],
-                "registry": candidate_registry,
-                "candidate_path": str(CANDIDATE_PATH),
-                "promoted_path": str(PROMOTED_PATH) if decision.promote else None,
-                "decision": decision.reason,
-                "metrics_train": metrics,
-                "metrics_reference": candidate_reference_metrics,
-            },
-            indent=2,
-        )
+    write_retrain_result(
+        {
+            "status": status,
+            "decision_id": record["decision_id"],
+            "mlflow_run_id": record["candidate"]["mlflow_run_id"],
+            "registry": candidate_registry,
+            "candidate_path": str(CANDIDATE_PATH),
+            "promoted_path": str(PROMOTED_PATH) if decision.promote else None,
+            "new_feedbacks": feedback_count,
+            "excluded_feedbacks": excluded_count,
+            "min_feedback": args.min_feedback,
+            "decision": decision.reason,
+            "metrics_train": metrics,
+            "metrics_reference": candidate_reference_metrics,
+        }
     )
     return 0
 

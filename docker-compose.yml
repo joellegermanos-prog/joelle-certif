@@ -139,6 +139,7 @@ services:
     environment:
       FEEDBACK_DB: "/app/feedback-data/feedbacks.db"
       DECISION_LOG: "/app/reports/decisions_log.jsonl"
+      RETRAIN_RESULT_PATH: "/app/reports/retrain-result.json"
       MLFLOW_TRACKING_URI: "${MLFLOW_TRACKING_URI:-http://mlflow:5000}"
     volumes:
       - feedback_data:/app/feedback-data

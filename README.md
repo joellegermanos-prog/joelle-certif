@@ -258,11 +258,21 @@ Sous Linux ou via cron :
 ```
 
 Le workflow [retrain.yml](.github/workflows/retrain.yml) ajoute un lancement
-planifié toutes les six heures et un lancement manuel. Il se connecte par SSH
-à l'hôte de déploiement puis lance le service Compose `retrainer`, qui partage
-le volume persistant `feedback_data` avec le backend. Configurez les secrets
-`DEPLOY_HOST`, `DEPLOY_USER`, `DEPLOY_SSH_KEY` et `DEPLOY_PATH`; l'image
-`retrainer` est publiée sur GHCR avec les autres services.
+planifié toutes les six heures et un lancement manuel. Il s'exécute sur le
+runner auto-hébergé Windows installé sur l'hôte de déploiement (labels
+`self-hosted`, `windows`, `x64`, `cisia-prod`) : aucun port entrant ni secret
+SSH n'est nécessaire. Configurez la variable de dépôt `DEPLOY_PATH` vers le
+répertoire Compose de production, et exécutez le service du runner avec un
+compte Windows qui a accès au moteur Docker.
+
+Le job force le projet Compose `certification` pour réutiliser le volume
+`certification_feedback_data`, partagé avec le backend, puis récupère l'image
+`retrainer` épinglée au commit. Le script journalise l'exécution dans MLflow
+et écrit `reports/retrain-result.json`; `SLACK_WEBHOOK_URL` reste facultatif
+et ne sert qu'aux notifications. Si le candidat est promu, le workflow met à
+jour `MODEL_ARTIFACT` dans le `.env` local ignoré par Git et recrée `model`
+pour charger l'artefact promu; cette sélection reste active lors des prochains
+`docker compose up`.
 
 Après une décision `promoted`, le modèle promu peut être déployé localement :
 

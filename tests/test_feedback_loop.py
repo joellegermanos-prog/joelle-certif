@@ -58,6 +58,24 @@ def test_retrain_trigger_starts_at_threshold():
     assert should_retrain(200, 200) is True
 
 
+def test_low_feedback_run_writes_structured_result(tmp_path, monkeypatch):
+    from scripts import retrain
+
+    result_path = tmp_path / "reports" / "retrain-result.json"
+    monkeypatch.setattr(retrain, "load_unconsumed_feedbacks", pd.DataFrame)
+    monkeypatch.setenv("RETRAIN_RESULT_PATH", str(result_path))
+    monkeypatch.setattr(sys, "argv", ["retrain.py", "--min-feedback", "2"])
+
+    assert retrain.main() == 0
+    result = json.loads(result_path.read_text(encoding="utf-8"))
+    assert result == {
+        "status": "skipped_low_volume",
+        "new_feedbacks": 0,
+        "excluded_feedbacks": 0,
+        "min_feedback": 2,
+    }
+
+
 def test_feedback_training_data_keeps_cisia_three_class_labels(tmp_path, monkeypatch):
     db_path = tmp_path / "feedbacks.db"
     monkeypatch.setenv("FEEDBACK_DB", str(db_path))
@@ -150,12 +168,17 @@ def test_feedback_to_promotion_end_to_end(tmp_path, monkeypatch):
     monkeypatch.setattr(retrain, "PROMOTED_PATH", tmp_path / "promoted.joblib")
     monkeypatch.setattr(retrain, "PROMOTED_METADATA_PATH", tmp_path / "promoted.json")
     monkeypatch.setattr(retrain, "DECISION_LOG", tmp_path / "decisions.jsonl")
+    result_path = tmp_path / "retrain-result.json"
+    monkeypatch.setenv("RETRAIN_RESULT_PATH", str(result_path))
     monkeypatch.setenv("MLFLOW_TRACKING_URI", (tmp_path / "mlruns").as_uri())
     monkeypatch.setattr(sys, "argv", ["retrain.py", "--min-feedback", "1"])
 
     assert retrain.main() == 0
     assert (tmp_path / "candidate.joblib").exists()
+    result = json.loads(result_path.read_text(encoding="utf-8"))
     record = json.loads((tmp_path / "decisions.jsonl").read_text(encoding="utf-8").splitlines()[-1])
+    assert result["status"] == record["decision"]["status"]
+    assert result["mlflow_run_id"] == record["candidate"]["mlflow_run_id"]
     assert record["schema_version"] == retrain.DECISION_SCHEMA_VERSION
     assert record["decision"]["status"] in {"promoted", "rejected"}
     assert record["candidate"]["mlflow_run_id"]

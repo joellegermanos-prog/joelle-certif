@@ -1,8 +1,8 @@
 {
-  "uid": "cisia-emploi-drift",
+  "uid": "Retour-emploi-drift",
   "title": "Retour-Emploi Drift — suivi dérive v2",
   "tags": [
-    "cisia-emploi",
+    "Retour-emploi",
     "m6",
     "drift"
   ],
@@ -61,7 +61,7 @@
             "type": "prometheus",
             "uid": "prometheus"
           },
-          "expr": "histogram_quantile(0.5, sum(rate(cisia_emploi_prediction_proba_bucket[15m])) by (le))",
+          "expr": "histogram_quantile(0.5, sum(rate(retour_emploi_prediction_proba_bucket[15m])) by (le))",
           "legendFormat": "mediane"
         },
         {
@@ -70,7 +70,7 @@
             "type": "prometheus",
             "uid": "prometheus"
           },
-          "expr": "histogram_quantile(0.9, sum(rate(cisia_emploi_prediction_proba_bucket[15m])) by (le))",
+          "expr": "histogram_quantile(0.9, sum(rate(retour_emploi_prediction_proba_bucket[15m])) by (le))",
           "legendFormat": "p90"
         }
       ]
@@ -123,7 +123,7 @@
             "type": "prometheus",
             "uid": "prometheus"
           },
-          "expr": "sum(rate(cisia_emploi_predictions_total[15m])) by (predicted_class) / ignoring(predicted_class) group_left sum(rate(cisia_emploi_predictions_total[15m]))",
+          "expr": "sum(rate(retour_emploi_predictions_total[15m])) by (predicted_class) / ignoring(predicted_class) group_left sum(rate(retour_emploi_predictions_total[15m]))",
           "legendFormat": "classe {{predicted_class}}"
         }
       ]
