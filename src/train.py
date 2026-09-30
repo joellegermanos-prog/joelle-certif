@@ -2568,19 +2568,16 @@ def train_scenario(
         encoding="utf-8",
     )
 
-    print(
-        f"\nPipeline     : "
-        f"{model_path.resolve()}"
-    )
-
-    print(
-        f"Métadonnées : "
-        f"{metadata_path.resolve()}"
-    )
+    #print(
+    #    f"\nPipeline     : "
+    #    f"{model_path.resolve()}"
+    #)
 
     #print(
-    #    "Holdout      : non évalué"
+    #    f"Métadonnées : "
+    #    f"{metadata_path.resolve()}"
     #)
+
 
     return {
         "model_type": model_type,

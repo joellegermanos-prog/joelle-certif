@@ -42,7 +42,7 @@ SCENARIOS: dict[str, dict[str, Any]] = {
         "text_only": False,
     },
     "texte_seul": {
-        "description": "Synthèse d'entretien uniquement avec TF-IDF.",
+        "description": "Variable texte uniquement.",
         "include_sensitive": False,
         "include_text": True,
         "text_only": True,

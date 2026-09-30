@@ -6,14 +6,17 @@
 # TYPE cisia_drift_chi2_pvalue gauge
 # HELP cisia_confidence_drift_psi PSI of predicted probabilities
 # TYPE cisia_confidence_drift_psi gauge
-cisia_drift_psi{feature="anciennete_poste_ans"} 0.015227314251275381
-cisia_drift_ks_pvalue{feature="anciennete_poste_ans"} 0.7854734429147382
-cisia_drift_psi{feature="niveau_diplome"} 0.3557265333210421
-cisia_drift_chi2_pvalue{feature="niveau_diplome"} 0.02640329169806006
-cisia_drift_psi{feature="code_rome_vise"} 0.07907313240224727
-cisia_drift_chi2_pvalue{feature="code_rome_vise"} 0.9583283905507806
-cisia_drift_psi{feature="code_insee_commune"} 8.137326780270802
-cisia_drift_chi2_pvalue{feature="code_insee_commune"} 0.8637300146692083
+cisia_drift_psi{feature="anciennete_poste_ans"} 0.019943337895481226
+cisia_drift_ks_pvalue{feature="anciennete_poste_ans"} 0.7516787908604354
+cisia_drift_psi{feature="niveau_diplome"} 0.008961001964443062
+cisia_drift_chi2_pvalue{feature="niveau_diplome"} 0.08170386690688529
+cisia_drift_psi{feature="code_rome_vise"} 0.0575434936349409
+cisia_drift_chi2_pvalue{feature="code_rome_vise"} 0.7279686019613467
+cisia_drift_psi{feature="code_insee_commune"} 7.255471494909336
+cisia_drift_chi2_pvalue{feature="code_insee_commune"} 0.6939062919065689
+cisia_confidence_drift_psi{class="0"} 0.012485943546703128
+cisia_confidence_drift_psi{class="1"} 0.007092930616312341
+cisia_confidence_drift_psi{class="2"} 0.011417217357502148
 # HELP cisia_drift_alert 1 when a drift signal needs investigation
 # TYPE cisia_drift_alert gauge
 cisia_drift_alert 1
@@ -22,10 +25,10 @@ cisia_drift_alert 1
 cisia_drift_alert_severity 2
 # HELP cisia_drift_report_timestamp_seconds Unix timestamp of the latest drift report
 # TYPE cisia_drift_report_timestamp_seconds gauge
-cisia_drift_report_timestamp_seconds 1790597073.0994446
+cisia_drift_report_timestamp_seconds 1790778362.36337
 # HELP cisia_drift_alert_timestamp_seconds Unix timestamp of the latest detected alert
 # TYPE cisia_drift_alert_timestamp_seconds gauge
-cisia_drift_alert_timestamp_seconds 1790597073.0994446
+cisia_drift_alert_timestamp_seconds 1790778362.36337
 # HELP cisia_drift_alert_owner_info Owner responsible for drift investigation
 # TYPE cisia_drift_alert_owner_info gauge
 cisia_drift_alert_owner_info{owner="ML Platform"} 1
