@@ -336,8 +336,6 @@ def test_feedback_is_idempotent_and_rejects_conflict():
 
 
 def test_evaluation_metrics_endpoint_serves_latest_gate(monkeypatch, tmp_path):
-    from app.main import EVALUATION_METRICS_FILE
-
     metrics_path = tmp_path / "evaluation.prom"
     metrics_path.write_text("cisia_evaluation_gate_status 1\n", encoding="utf-8")
     monkeypatch.setattr("app.main.EVALUATION_METRICS_FILE", metrics_path)
@@ -349,8 +347,6 @@ def test_evaluation_metrics_endpoint_serves_latest_gate(monkeypatch, tmp_path):
 
 
 def test_retrain_metrics_endpoint_serves_latest_run(monkeypatch, tmp_path):
-    from app.main import RETRAIN_METRICS_FILE
-
     metrics_path = tmp_path / "retrain.prom"
     metrics_path.write_text(
         'cisia_retrain_last_run_status_info{status="skipped_low_volume"} 1\n',
