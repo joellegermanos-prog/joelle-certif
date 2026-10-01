@@ -50,6 +50,8 @@ class Prediction(BaseModel):
     request_id: str
     usager_id: str | None = None
     session_id: str | None = None
+    needs_human_review: bool = False
+    review_reasons: list[str] = Field(default_factory=list)
 
 
 class Feedback(BaseModel):

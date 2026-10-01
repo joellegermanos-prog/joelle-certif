@@ -13,6 +13,7 @@ import argparse
 import hashlib
 import json
 import os
+import re
 import shutil
 import sqlite3
 import sys
@@ -425,16 +426,53 @@ def log_decision(record: dict[str, object]) -> None:
         stream.write(json.dumps(record, ensure_ascii=False) + "\n")
 
 
-def write_promoted_metadata(candidate_metrics: dict[str, float], feedback_count: int) -> None:
+def _semantic_version_parts(version: object) -> tuple[int, int, int] | None:
+    if not isinstance(version, str):
+        return None
+    match = re.fullmatch(r"v(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)", version)
+    if match is None:
+        return None
+    return tuple(int(part) for part in match.groups())
+
+
+def next_promoted_version(previous_version: object, base_version: object) -> str:
+    """Return the next patch version, migrating legacy timestamp tags from the base version."""
+    parts = _semantic_version_parts(previous_version) or _semantic_version_parts(base_version)
+    if parts is None:
+        return "v1.0.0"
+    major, minor, patch = parts
+    return f"v{major}.{minor}.{patch + 1}"
+
+
+def write_promoted_metadata(
+    candidate_metrics: dict[str, float],
+    feedback_count: int,
+) -> str:
     """Persist promotion metadata without changing the production artifact."""
     metadata = json.loads(PRODUCTION_METADATA_PATH.read_text(encoding="utf-8"))
     candidate_metadata = json.loads(CANDIDATE_METADATA_PATH.read_text(encoding="utf-8"))
+    previous_promoted_metadata = (
+        json.loads(PROMOTED_METADATA_PATH.read_text(encoding="utf-8"))
+        if PROMOTED_METADATA_PATH.exists()
+        else {}
+    )
+    previous_version = previous_promoted_metadata.get("model_version")
+    base_version = metadata.get("model_version")
+    promoted_version = next_promoted_version(previous_version, base_version)
+    previous_semantic_version = (
+        previous_version
+        if _semantic_version_parts(previous_version) is not None
+        else base_version
+    )
     metadata["configuration"] = candidate_metadata["configuration"]
     metadata["candidate_dataset"] = candidate_metadata.get("dataset")
     metadata["candidate_training"] = candidate_metadata.get("training")
-    metadata["model_version"] = f"promoted-{datetime.now(timezone.utc).strftime('%Y%m%d%H%M%S')}"
+    metadata["model_version"] = promoted_version
+    metadata["created_at_utc"] = datetime.now(timezone.utc).isoformat()
     metadata["promotion"] = {
         "status": "promoted",
+        "version": promoted_version,
+        "previous_version": previous_semantic_version,
         "new_feedbacks": feedback_count,
         "reference_set": str(REFERENCE_SET.relative_to(ROOT)),
         "metrics": candidate_metrics,
@@ -443,6 +481,7 @@ def write_promoted_metadata(candidate_metrics: dict[str, float], feedback_count:
         json.dumps(metadata, indent=2, ensure_ascii=False),
         encoding="utf-8",
     )
+    return promoted_version
 
 
 def write_retrain_result(result: dict[str, object]) -> None:
@@ -453,6 +492,35 @@ def write_retrain_result(result: dict[str, object]) -> None:
     result_path.parent.mkdir(parents=True, exist_ok=True)
     serialized = json.dumps(result, indent=2, ensure_ascii=False)
     result_path.write_text(serialized, encoding="utf-8")
+
+    status = str(result.get("status", "unknown"))
+    safe_status = status if status in {"skipped_low_volume", "promoted", "rejected"} else "unknown"
+    candidate_trained = int(status in {"promoted", "rejected"})
+    metrics_path = Path(
+        os.environ.get("RETRAIN_METRICS_PATH", str(ROOT / "reports" / "retrain.prom"))
+    )
+    metrics_path.parent.mkdir(parents=True, exist_ok=True)
+    metrics = "\n".join([
+        "# HELP cisia_retrain_last_run_status_info Status label for the latest retrainer run",
+        "# TYPE cisia_retrain_last_run_status_info gauge",
+        f'cisia_retrain_last_run_status_info{{status="{safe_status}"}} 1',
+        "# HELP cisia_retrain_last_run_new_feedbacks New validated feedbacks available to the run",
+        "# TYPE cisia_retrain_last_run_new_feedbacks gauge",
+        f"cisia_retrain_last_run_new_feedbacks {int(result.get('new_feedbacks', 0))}",
+        "# HELP cisia_retrain_last_run_min_feedback Feedback threshold configured for the run",
+        "# TYPE cisia_retrain_last_run_min_feedback gauge",
+        f"cisia_retrain_last_run_min_feedback {int(result.get('min_feedback', 0))}",
+        "# HELP cisia_retrain_candidate_trained 1 when a candidate model was actually trained",
+        "# TYPE cisia_retrain_candidate_trained gauge",
+        f"cisia_retrain_candidate_trained {candidate_trained}",
+        "# HELP cisia_retrain_last_run_timestamp_seconds Unix timestamp of the latest retrainer run",
+        "# TYPE cisia_retrain_last_run_timestamp_seconds gauge",
+        f"cisia_retrain_last_run_timestamp_seconds {datetime.now(timezone.utc).timestamp()}",
+        "",
+    ])
+    temporary_metrics_path = metrics_path.with_suffix(metrics_path.suffix + ".tmp")
+    temporary_metrics_path.write_text(metrics, encoding="utf-8")
+    temporary_metrics_path.replace(metrics_path)
     print(serialized)
 
 
@@ -557,14 +625,19 @@ def main() -> int:
         mlflow.log_dict(record, "decision/decision_record.json")
     log_decision(record)
 
+    promoted_model_version = None
     if decision.promote:
         shutil.copy2(CANDIDATE_PATH, PROMOTED_PATH)
-        write_promoted_metadata(candidate_reference_metrics, feedback_count)
+        promoted_model_version = write_promoted_metadata(
+            candidate_reference_metrics,
+            feedback_count,
+        )
 
     mark_feedbacks_consumed(read_request_ids)
     write_retrain_result(
         {
             "status": status,
+            "promoted_model_version": promoted_model_version,
             "decision_id": record["decision_id"],
             "mlflow_run_id": record["candidate"]["mlflow_run_id"],
             "registry": candidate_registry,

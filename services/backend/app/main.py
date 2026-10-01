@@ -21,6 +21,7 @@ import httpx
 from fastapi import FastAPI, HTTPException, Query, Request, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import PlainTextResponse
+from loguru import logger
 from prometheus_client import Counter, Histogram
 from prometheus_fastapi_instrumentator import Instrumentator
 
@@ -38,8 +39,18 @@ from app.schemas import (
 # URL du service model — configurable par variable d'env (dev/staging/prod)
 MODEL_URL = os.environ.get("MODEL_URL", "http://model:8000")
 ALLOWED_ORIGINS = os.environ.get("ALLOWED_ORIGINS", "http://localhost:8088").split(",")
+ABSTENTION_THRESHOLD = float(os.environ.get("ABSTENTION_THRESHOLD", "0.55"))
+CLASS_2_ESCALATION_THRESHOLD = float(
+    os.environ.get("CLASS_2_ESCALATION_THRESHOLD", "0.04")
+)
 DRIFT_METRICS_FILE = Path(
     os.environ.get("DRIFT_METRICS_FILE", "/app/reports/drift.prom")
+)
+EVALUATION_METRICS_FILE = Path(
+    os.environ.get("EVALUATION_METRICS_FILE", "/app/reports/evaluation.prom")
+)
+RETRAIN_METRICS_FILE = Path(
+    os.environ.get("RETRAIN_METRICS_FILE", "/app/reports/retrain.prom")
 )
 HISTORY_EXCLUDED_INPUT_FIELDS = {
     "usager_id",
@@ -69,7 +80,9 @@ def _init_feedback_db() -> None:
                 prediction INTEGER NOT NULL,
                 probabilities_json TEXT NOT NULL,
                 model_version TEXT NOT NULL,
-                created_at TEXT NOT NULL
+                created_at TEXT NOT NULL,
+                needs_human_review INTEGER NOT NULL DEFAULT 0,
+                review_reasons_json TEXT NOT NULL DEFAULT '[]'
             )"""
         )
         columns = {
@@ -79,6 +92,14 @@ def _init_feedback_db() -> None:
         for column in ("usager_id", "session_id"):
             if column not in columns:
                 connection.execute(f"ALTER TABLE predictions ADD COLUMN {column} TEXT")
+        if "needs_human_review" not in columns:
+            connection.execute(
+                "ALTER TABLE predictions ADD COLUMN needs_human_review INTEGER NOT NULL DEFAULT 0"
+            )
+        if "review_reasons_json" not in columns:
+            connection.execute(
+                "ALTER TABLE predictions ADD COLUMN review_reasons_json TEXT NOT NULL DEFAULT '[]'"
+            )
         connection.execute(
             """CREATE TABLE IF NOT EXISTS feedbacks (
                 request_id TEXT PRIMARY KEY,
@@ -133,7 +154,7 @@ app.add_middleware(
 # Métriques métier custom
 MODEL_UPSTREAM_ERRORS_TOTAL = Counter(
     "backend_model_upstream_errors_total",
-    "Nombre d'erreurs remontées par le service model lors d'un appel /score.",
+    "Nombre d'erreurs remontées par le service model lors d'un appel /score ou /train.",
     labelnames=("kind",),
 )
 # Buckets fins sur la plage attendue (appel interne réseau, quelques ms à ~1s)
@@ -145,8 +166,12 @@ MODEL_CALL_DURATION_SECONDS = Histogram(
 )
 BACKEND_PREDICTIONS_TOTAL = Counter(
     "backend_predictions_total",
-    "Décisions renvoyées au client, par classe prédite et version de modèle.",
+    "Sorties du modèle comptées par classe, abstentions comprises.",
     labelnames=("predicted_class", "model_version"),
+)
+BACKEND_ABSTENTIONS_TOTAL = Counter(
+    "backend_abstentions_total",
+    "Dossiers orientés vers une revue humaine après le scoring.",
 )
 BACKEND_PREDICTION_PROBA = Histogram(
     "backend_prediction_proba",
@@ -170,10 +195,46 @@ async def drift_metrics() -> PlainTextResponse:
     )
 
 
+@app.get("/evaluation-metrics", include_in_schema=False)
+async def evaluation_metrics() -> PlainTextResponse:
+    """Serve the latest release-gate evaluation for Prometheus."""
+    if not EVALUATION_METRICS_FILE.is_file():
+        return PlainTextResponse("", media_type="text/plain; version=0.0.4")
+    return PlainTextResponse(
+        EVALUATION_METRICS_FILE.read_text(encoding="utf-8"),
+        media_type="text/plain; version=0.0.4",
+    )
+
+
+@app.get("/retrain-metrics", include_in_schema=False)
+async def retrain_metrics() -> PlainTextResponse:
+    """Serve the latest local retrainer result for Prometheus."""
+    if not RETRAIN_METRICS_FILE.is_file():
+        return PlainTextResponse("", media_type="text/plain; version=0.0.4")
+    return PlainTextResponse(
+        RETRAIN_METRICS_FILE.read_text(encoding="utf-8"),
+        media_type="text/plain; version=0.0.4",
+    )
+
+
 @app.get("/health", response_model=HealthResponse)
 async def health() -> HealthResponse:
     """Liveness du backend (ne dépend PAS du model)."""
     return HealthResponse(status="ok")
+
+
+def _human_review_reasons(
+    predicted_class: int,
+    probabilities: dict[str, float],
+) -> list[str]:
+    reasons = []
+    max_probability = max(float(value) for value in probabilities.values())
+    class_2_probability = float(probabilities.get("2", 0.0))
+    if max_probability < ABSTENTION_THRESHOLD:
+        reasons.append("low_confidence")
+    if predicted_class == 0 and class_2_probability >= CLASS_2_ESCALATION_THRESHOLD:
+        reasons.append("class_2_risk")
+    return reasons
 
 
 
@@ -247,10 +308,24 @@ async def score(application: EmploymentApplication, request: Request) -> Predict
             detail="Model response schema mismatch",
         ) from exc
 
+    review_reasons = _human_review_reasons(
+        prediction.prediction,
+        prediction.probabilities,
+    )
+    prediction.needs_human_review = bool(review_reasons)
+    prediction.review_reasons = review_reasons
     BACKEND_PREDICTIONS_TOTAL.labels(
         predicted_class=str(prediction.prediction),
         model_version=prediction.model_version,
     ).inc()
+    if prediction.needs_human_review:
+        BACKEND_ABSTENTIONS_TOTAL.inc()
+        logger.bind(
+            request_id=prediction.request_id,
+            review_reasons=review_reasons,
+            max_probability=max(prediction.probabilities.values()),
+            class_2_probability=prediction.probabilities.get("2", 0.0),
+        ).warning("Prediction routed for human review")
     BACKEND_PREDICTION_PROBA.observe(
         prediction.probabilities[str(prediction.prediction)]
     )
@@ -259,8 +334,9 @@ async def score(application: EmploymentApplication, request: Request) -> Predict
         connection.execute(
             """INSERT OR IGNORE INTO predictions
             (request_id, usager_id, session_id, input_json, prediction,
-             probabilities_json, model_version, created_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
+             probabilities_json, model_version, created_at, needs_human_review,
+             review_reasons_json)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
             (
                 prediction.request_id,
                 application.usager_id,
@@ -273,6 +349,8 @@ async def score(application: EmploymentApplication, request: Request) -> Predict
                 json.dumps(prediction.probabilities),
                 prediction.model_version,
                 datetime.now(timezone.utc).isoformat(),
+                int(prediction.needs_human_review),
+                json.dumps(review_reasons),
             ),
         )
     return prediction
@@ -299,7 +377,7 @@ async def history(
         rows = connection.execute(
             f"""SELECT p.request_id, p.usager_id, p.session_id, p.prediction,
                 p.probabilities_json, p.model_version, p.created_at, f.true_label,
-                p.input_json, f.comments
+                p.input_json, f.comments, p.needs_human_review, p.review_reasons_json
                 FROM predictions AS p
                 LEFT JOIN feedbacks AS f ON f.request_id = p.request_id
                 {where} ORDER BY p.created_at DESC LIMIT ?""",
@@ -321,6 +399,8 @@ async def history(
                 if key not in HISTORY_EXCLUDED_INPUT_FIELDS
             },
             "comments": row[9],
+            "needs_human_review": bool(row[10]),
+            "review_reasons": json.loads(row[11]),
         }
         for row in rows
     ]
@@ -398,4 +478,11 @@ async def train(request_data: TrainRequest, request: Request) -> TrainResponse:
         MODEL_UPSTREAM_ERRORS_TOTAL.labels(kind="training_error").inc()
         raise HTTPException(status_code=502, detail=response.text[:200])
 
-    return TrainResponse(**response.json())
+    try:
+        return TrainResponse(**response.json())
+    except Exception as exc:
+        MODEL_UPSTREAM_ERRORS_TOTAL.labels(kind="invalid_training_response").inc()
+        raise HTTPException(
+            status_code=502,
+            detail="Invalid training response from model",
+        ) from exc

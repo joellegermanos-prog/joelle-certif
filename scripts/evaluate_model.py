@@ -26,6 +26,7 @@ import argparse
 import json
 import os
 import sys
+import time
 from pathlib import Path
 
 import joblib
@@ -49,6 +50,7 @@ REFERENCE_SET = ROOT / "data" / "reference_set.csv"
 REFERENCE_BASELINE = ROOT / "data" / "reference_baseline.json"
 SOURCE_DATASET = ROOT / "data" / "dataset_trajectoire_emploi.csv"
 MODEL_META = MODELS_DIR / "cisia_emploi_xgboost_multimodal_ethique_best_class_2_ethique.json"
+DEFAULT_PROMETHEUS_OUTPUT = ROOT / "reports" / "evaluation.prom"
 
 # Seuils conservateurs pour bloquer une release uniquement sur une vraie
 # dégradation du modèle sur le jeu de référence gelé.
@@ -60,7 +62,7 @@ MODEL_META = MODELS_DIR / "cisia_emploi_xgboost_multimodal_ethique_best_class_2_
 THRESHOLDS: dict[str, dict[str, float]] = {
     "f1_macro": {"absolute_min": 0.60, "max_drop_vs_baseline": 0.04},
     "f1_classe_2": {"absolute_min": 0.50, "max_drop_vs_baseline": 0.05},
-    "recall_classe_2": {"absolute_min": 0.50, "max_drop_vs_baseline": 0.05},
+    "recall_classe_2": {"absolute_min": 0.59, "max_drop_vs_baseline": 0.06},
     "roc_auc_ovr_macro": {"absolute_min": 0.70, "max_drop_vs_baseline": 0.04},
 }
 
@@ -108,6 +110,66 @@ def check_thresholds(metrics: dict[str, float], baseline: dict) -> list[str]:
             )
 
     return violations
+
+
+def render_prometheus_metrics(
+    metrics: dict[str, float],
+    baseline: dict,
+    violations: list[str],
+    generated_at: float | None = None,
+) -> str:
+    """Render the latest multi-metric release-gate result for Prometheus."""
+    baseline_metrics = baseline["metrics"]
+    lines = [
+        "# HELP cisia_evaluation_gate_status 1 when the latest release gate passed",
+        "# TYPE cisia_evaluation_gate_status gauge",
+        f"cisia_evaluation_gate_status {int(not violations)}",
+        "# HELP cisia_evaluation_violations_total Number of failed release-gate checks",
+        "# TYPE cisia_evaluation_violations_total gauge",
+        f"cisia_evaluation_violations_total {len(violations)}",
+        "# HELP cisia_evaluation_metric_value Latest metric measured on the reference set",
+        "# TYPE cisia_evaluation_metric_value gauge",
+        "# HELP cisia_evaluation_metric_absolute_min Absolute quality floor per metric",
+        "# TYPE cisia_evaluation_metric_absolute_min gauge",
+        "# HELP cisia_evaluation_metric_baseline Golden-run metric value",
+        "# TYPE cisia_evaluation_metric_baseline gauge",
+        "# HELP cisia_evaluation_metric_drop_vs_baseline Baseline minus latest metric value",
+        "# TYPE cisia_evaluation_metric_drop_vs_baseline gauge",
+        "# HELP cisia_evaluation_metric_max_drop_vs_baseline Maximum permitted metric drop",
+        "# TYPE cisia_evaluation_metric_max_drop_vs_baseline gauge",
+        "# HELP cisia_evaluation_timestamp_seconds Unix time of the latest completed evaluation",
+        "# TYPE cisia_evaluation_timestamp_seconds gauge",
+    ]
+    for metric_name, thresholds in THRESHOLDS.items():
+        metric_value = float(metrics[metric_name])
+        baseline_value = float(baseline_metrics[metric_name])
+        labels = f'{{metric="{metric_name}"}}'
+        lines.extend([
+            f"cisia_evaluation_metric_value{labels} {metric_value}",
+            f"cisia_evaluation_metric_absolute_min{labels} {thresholds['absolute_min']}",
+            f"cisia_evaluation_metric_baseline{labels} {baseline_value}",
+            f"cisia_evaluation_metric_drop_vs_baseline{labels} {baseline_value - metric_value}",
+            f"cisia_evaluation_metric_max_drop_vs_baseline{labels} {thresholds['max_drop_vs_baseline']}",
+        ])
+    timestamp = generated_at if generated_at is not None else time.time()
+    lines.append(f"cisia_evaluation_timestamp_seconds {timestamp}")
+    return "\n".join(lines) + "\n"
+
+
+def write_prometheus_metrics(
+    output_path: Path,
+    metrics: dict[str, float],
+    baseline: dict,
+    violations: list[str],
+) -> None:
+    """Atomically publish the latest gate result for the backend scrape endpoint."""
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    temporary_path = output_path.with_suffix(output_path.suffix + ".tmp")
+    temporary_path.write_text(
+        render_prometheus_metrics(metrics, baseline, violations),
+        encoding="utf-8",
+    )
+    temporary_path.replace(output_path)
 
 
 def load_baseline() -> dict:
@@ -230,6 +292,7 @@ def main() -> int:
     parser.add_argument("--release-tag", default="dev")
     parser.add_argument("--degrade", action="store_true")
     parser.add_argument("--freeze-baseline", action="store_true")
+    parser.add_argument("--prometheus-output", type=Path, default=DEFAULT_PROMETHEUS_OUTPUT)
     args = parser.parse_args()
 
     model = joblib.load(MODEL_META.with_suffix(".joblib"))
@@ -253,6 +316,7 @@ def main() -> int:
     metrics = compute_metrics(model, df, meta)
     baseline = load_baseline()  # ← le golden run, PAS metrics_holdout
     violations = check_thresholds(metrics, baseline)
+    write_prometheus_metrics(args.prometheus_output, metrics, baseline, violations)
 
     # --- Bloc MLflow — params lus depuis le JSON du modèle ------------------
     tracking_uri = os.environ.get("MLFLOW_TRACKING_URI")

@@ -1,7 +1,7 @@
 {
   "model_name": "cisia_emploi",
   "model_type": "xgboost",
-  "model_version": "promoted-20260929004805",
+  "model_version": "v1.0.1",
   "scenario_name": "multimodal_ethique",
   "config_name": "best_class_2_ethique",
   "created_at_utc": "2026-09-27T08:07:16.246226+00:00",
@@ -3190,6 +3190,8 @@
   },
   "promotion": {
     "status": "promoted",
+    "version": "v1.0.1",
+    "previous_version": "v1.0.0",
     "new_feedbacks": 1,
     "reference_set": "data/reference_set.csv",
     "metrics": {

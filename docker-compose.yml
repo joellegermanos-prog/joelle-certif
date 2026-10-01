@@ -58,6 +58,10 @@ services:
       MODEL_URL: "http://model:8000"
       ALLOWED_ORIGINS: "http://frontend,http://127.0.0.1:8088"
       FEEDBACK_DB: "/app/data/feedbacks.db"
+      RETRAIN_METRICS_FILE: "/app/reports/retrain.prom"
+      EVALUATION_METRICS_FILE: "/app/reports/evaluation.prom"
+      ABSTENTION_THRESHOLD: "${ABSTENTION_THRESHOLD:-0.55}"
+      CLASS_2_ESCALATION_THRESHOLD: "${CLASS_2_ESCALATION_THRESHOLD:-0.04}"
       USER_REGISTRY_URL: "${USER_REGISTRY_URL:-}"
       USER_REGISTRY_TIMEOUT_SECONDS: "${USER_REGISTRY_TIMEOUT_SECONDS:-2}"
     volumes:
@@ -140,6 +144,7 @@ services:
       FEEDBACK_DB: "/app/feedback-data/feedbacks.db"
       DECISION_LOG: "/app/reports/decisions_log.jsonl"
       RETRAIN_RESULT_PATH: "/app/reports/retrain-result.json"
+      RETRAIN_METRICS_PATH: "/app/reports/retrain.prom"
       MLFLOW_TRACKING_URI: "${MLFLOW_TRACKING_URI:-http://mlflow:5000}"
     volumes:
       - feedback_data:/app/feedback-data

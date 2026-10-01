@@ -121,9 +121,9 @@
       <thead><tr>
         <th>Date</th><th>Session</th><th>Usager</th><th>Diplôme</th><th>Ancienneté (ans)</th>
         <th>Code ROME</th><th>Allocataire</th><th>Code INSEE commune</th><th>Synthèse de l'entretien</th>
-        <th>Prédiction</th><th>Probabilités</th><th>Modèle</th><th>Request ID</th><th>Résultat réel</th><th>Commentaire</th>
+        <th>Prédiction</th><th>Orientation</th><th>Probabilités</th><th>Modèle</th><th>Request ID</th><th>Résultat réel</th><th>Commentaire</th>
       </tr></thead>
-      <tbody id="historyBody"><tr><td colspan="15">Aucune inférence dans cette session.</td></tr></tbody>
+      <tbody id="historyBody"><tr><td colspan="16">Aucune inférence dans cette session.</td></tr></tbody>
     </table>
   </section>
 
@@ -191,7 +191,7 @@
       if (!entries.length) {
         const emptyRow = document.createElement('tr');
         const emptyCell = document.createElement('td');
-        emptyCell.colSpan = 15;
+        emptyCell.colSpan = 16;
         emptyCell.textContent = historyScope.value === 'all'
           ? 'Aucune inférence enregistrée.'
           : 'Aucune inférence dans cette session.';
@@ -221,6 +221,7 @@
         addCell(codeInsee);
         addCell(inputs.synthese_entretien, 'long-text');
         addCell(labels[entry.prediction] || entry.prediction);
+        addCell(entry.needs_human_review ? 'Revue humaine requise' : 'Automatique');
         addCell(Object.entries(entry.probabilities).map(([key, value]) => `${key}: ${(value * 100).toFixed(1)}%`).join(' | '));
         addCell(entry.model_version);
 
@@ -288,8 +289,15 @@
         const probabilities = Object.entries(body.probabilities)
           .map(([key, value]) => `${labels[key]} : ${(value * 100).toFixed(1)}%`)
           .join(' | ');
-        result.textContent = `${labels[body.prediction]} - ${probabilities} (modèle ${body.model_version}) - Request ID : ${body.request_id}`;
-        result.className = body.prediction === 2 ? 'ko' : 'ok';
+        const reasonLabels = {
+          low_confidence: 'confiance sous le seuil',
+          class_2_risk: 'risque classe 2 à confirmer'
+        };
+        const reviewNotice = body.needs_human_review
+          ? `À revoir par un conseiller (${body.review_reasons.map(reason => reasonLabels[reason] || reason).join(', ')}). Proposition du modèle : `
+          : '';
+        result.textContent = `${reviewNotice}${labels[body.prediction]} - ${probabilities} (modèle ${body.model_version}) - Request ID : ${body.request_id}`;
+        result.className = body.needs_human_review || body.prediction === 2 ? 'ko' : 'ok';
         loadHistory().catch(() => {});
       } catch (error) {
         result.textContent = `Erreur : ${error.message}`;

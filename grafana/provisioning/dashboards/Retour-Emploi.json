@@ -573,8 +573,9 @@
     },
     {
       "id": 11,
-      "type": "stat",
-      "title": "Comportement - Classe dominante",
+      "type": "gauge",
+      "title": "Taux d'abstention / de rejet automatique (%)",
+      "description": "Part des prédictions nécessitant une revue humaine sur les 15 dernières minutes. Rouge sous 5 % ou à partir de 35 %; vert de 5 % à 30 %; orange de 30 % à 35 %.",
       "datasource": {
         "type": "prometheus",
         "uid": "prometheus"
@@ -588,8 +589,9 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "topk(1, sum(increase(backend_predictions_total[15m])) by (predicted_class)) or label_replace(vector(0), \"predicted_class\", \"aucune\", \"\", \"\")",
-          "legendFormat": "classe dominante {{predicted_class}} - 15 min",
+          "expr": "clamp_max(sum(increase(backend_abstentions_total[15m])) / clamp_min(sum(increase(backend_predictions_total[15m])), 1), 1)",
+          "instant": true,
+          "legendFormat": "Taux abstention",
           "datasource": {
             "type": "prometheus",
             "uid": "prometheus"
@@ -598,26 +600,24 @@
       ],
       "fieldConfig": {
         "defaults": {
-          "noValue": "Pas de données",
-          "unit": "reqps",
+          "noValue": "Non instrumenté",
+          "min": 0,
+          "max": 1,
+          "unit": "percentunit",
           "color": {
-            "mode": "background_solid"
-          }
-        },
-        "overrides": [
-          {
-            "matcher": {
-              "id": "byName",
-              "options": "Value"
-            },
-            "properties": [
-              {
-                "id": "displayName",
-                "value": "Rythme dominant"
-              }
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "red", "value": null },
+              { "color": "green", "value": 0.05 },
+              { "color": "orange", "value": 0.30 },
+              { "color": "red", "value": 0.35 }
             ]
           }
-        ]
+        },
+        "overrides": []
       },
       "options": {
         "reduceOptions": {
@@ -625,10 +625,8 @@
           "calcs": ["lastNotNull"],
           "fields": ""
         },
-        "orientation": "auto",
-        "textMode": "value_and_name",
-        "graphMode": "area",
-        "justifyMode": "center"
+        "showThresholdLabels": true,
+        "showThresholdMarkers": true
       }
     },
     {
@@ -679,8 +677,8 @@
     {
       "id": 14,
       "type": "bargauge",
-      "title": "Comportement - Écart à la baseline (% par classe)",
-      "description": "Baseline attendue à ajuster selon la distribution réelle observée à l'entraînement. Seuils par défaut: tolérance ±10 points (jaune), ±20 points (rouge) autour de la baseline.",
+      "title": "Comportement - Répartition récente des prédictions (%)",
+      "description": "Part des prédictions de chaque classe sur les 15 dernières minutes. Ce panneau montre la distribution récente, pas un écart à une baseline historique.",
       "datasource": {
         "type": "prometheus",
         "uid": "prometheus"
@@ -800,8 +798,8 @@
     {
       "id": 16,
       "type": "stat",
-      "title": "Modèle - Temps depuis dernier réentraînement",
-      "description": "Nécessite d'exposer Retour_last_retrain_timestamp_seconds (timestamp Unix du dernier run MLflow) côté API Modèle (métrique à instrumenter).",
+      "title": "Réentraînement - Dernière tentative",
+      "description": "Affiche le dernier statut, le nombre de feedbacks nouveaux et le seuil requis. skipped_low_volume signifie qu'aucun candidat n'a été entraîné faute de feedbacks suffisants.",
       "datasource": {
         "type": "prometheus",
         "uid": "prometheus"
@@ -815,7 +813,35 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "(time() - max(Retour_last_retrain_timestamp_seconds)) / 3600",
+          "expr": "max by (status) (cisia_retrain_last_run_status_info)",
+          "legendFormat": "Statut: {{status}}",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          }
+        },
+        {
+          "refId": "B",
+          "expr": "cisia_retrain_last_run_new_feedbacks",
+          "legendFormat": "Nouveaux feedbacks",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          }
+        },
+        {
+          "refId": "C",
+          "expr": "cisia_retrain_last_run_min_feedback",
+          "legendFormat": "Seuil requis",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          }
+        },
+        {
+          "refId": "D",
+          "expr": "cisia_retrain_candidate_trained",
+          "legendFormat": "Candidat entraîné (0/1)",
           "datasource": {
             "type": "prometheus",
             "uid": "prometheus"
@@ -824,18 +850,11 @@
       ],
       "fieldConfig": {
         "defaults": {
-          "noValue": "Aucun réentraînement enregistré",
-          "unit": "h",
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              { "color": "green", "value": null },
-              { "color": "yellow", "value": 168 },
-              { "color": "red", "value": 720 }
-            ]
-          },
+          "noValue": "Aucune tentative enregistrée",
+          "unit": "short",
           "color": {
-            "mode": "thresholds"
+            "mode": "fixed",
+            "fixedColor": "blue"
           }
         },
         "overrides": []
@@ -847,16 +866,16 @@
           "fields": ""
         },
         "orientation": "auto",
-        "textMode": "value",
+        "textMode": "value_and_name",
         "graphMode": "none",
         "justifyMode": "center"
       }
     },
     {
       "id": 17,
-      "type": "gauge",
-      "title": "Modèle - Score d'évaluation vs seuil gate CI",
-      "description": "Nécessite d'exposer Retour_last_eval_score (score du dernier golden run) côté API Modèle. Seuil (0.75 par défaut) à aligner sur les seuils réels de scripts/evaluate_model.py.",
+      "type": "stat",
+      "title": "Modèle - Gate d'évaluation (dernier run local)",
+      "description": "Verdict réel de scripts/evaluate_model.py : PASS si les quatre métriques respectent leurs planchers et leur baisse maximale face au golden run; sinon FAIL.",
       "datasource": {
         "type": "prometheus",
         "uid": "prometheus"
@@ -870,7 +889,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "max(Retour_last_eval_score)",
+          "expr": "max(cisia_evaluation_gate_status)",
           "datasource": {
             "type": "prometheus",
             "uid": "prometheus"
@@ -879,15 +898,24 @@
       ],
       "fieldConfig": {
         "defaults": {
-          "noValue": "Pas de données",
-          "unit": "percentunit",
+          "noValue": "Aucune évaluation publiée",
+          "unit": "short",
           "min": 0,
           "max": 1,
+          "mappings": [
+            {
+              "type": "value",
+              "options": {
+                "0": { "text": "FAIL", "color": "red" },
+                "1": { "text": "PASS", "color": "green" }
+              }
+            }
+          ],
           "thresholds": {
             "mode": "absolute",
             "steps": [
               { "color": "red", "value": null },
-              { "color": "green", "value": 0.75 }
+              { "color": "green", "value": 1 }
             ]
           }
         },
@@ -1124,7 +1152,8 @@
         {
           "refId": "A",
           "expr": "cisia_model_info",
-          "legendFormat": "{{model_name}} - {{model_version}} - {{scenario}}",
+          "instant": true,
+          "legendFormat": "{{model_version}} - {{scenario}}",
           "datasource": {
             "type": "prometheus",
             "uid": "prometheus"

@@ -34,7 +34,7 @@ jobs:
       - name: Run model API tests
         run: >-
           pytest -v services/model/tests
-          -k "health_ok or predict_valid_returns_class_and_proba or predict_invalid_returns_422 or metrics_endpoint_exposes_prometheus"
+          -k "health_ok or predict_valid_returns_class_and_proba or predict_negative_seniority_returns_422 or train_internal_error_returns_500 or metrics_endpoint_exposes_prometheus"
       - name: Run backend API tests
         run: >-
           pytest -v services/backend/tests

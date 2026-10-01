@@ -20,6 +20,17 @@ def test_health_ok(client):
     assert resp.json()["status"] == "ok"
 
 
+def test_health_returns_503_when_model_not_loaded(client):
+    loaded_model = client.app.state.model
+    client.app.state.model = None
+    try:
+        resp = client.get("/health")
+    finally:
+        client.app.state.model = loaded_model
+
+    assert resp.status_code == 503
+
+
 def test_predict_valid_returns_class_and_proba(client, valid_payload):
     resp = client.post("/predict", json=valid_payload)
     assert resp.status_code == 200
@@ -30,11 +41,24 @@ def test_predict_valid_returns_class_and_proba(client, valid_payload):
     assert body["model_version"] == client.app.state.metadata["model_version"]
 
 
-def test_predict_invalid_returns_422(client, valid_payload):
+def test_predict_negative_seniority_returns_422(client, valid_payload):
     bad = dict(valid_payload)
     bad["anciennete_poste_ans"] = -1  # ancienneté négative interdite
     resp = client.post("/predict", json=bad)
     assert resp.status_code == 422
+    assert any(error["loc"][-1] == "anciennete_poste_ans" for error in resp.json()["detail"])
+
+
+def test_predict_internal_error_returns_500(client, valid_payload, monkeypatch):
+    def fail_prediction(_features):
+        raise RuntimeError("inference failed")
+
+    monkeypatch.setattr(client.app.state.model, "predict", fail_prediction)
+
+    resp = client.post("/predict", json=valid_payload)
+
+    assert resp.status_code == 500
+    assert resp.json()["detail"] == "Prediction failed: RuntimeError"
 
 
 def test_predict_does_not_require_age(client, valid_payload):
@@ -85,6 +109,27 @@ def test_train_returns_mlflow_run(client, valid_payload, monkeypatch, tmp_path):
     assert body["status"] == "trained"
     assert body["rows"] == 12
     assert body["mlflow_run_id"]
+
+
+def test_train_internal_error_returns_500(client, valid_payload, monkeypatch, tmp_path):
+    monkeypatch.delenv("TRAIN_API_TOKEN", raising=False)
+    monkeypatch.setenv("ALLOW_DIRECT_TRAIN", "true")
+    monkeypatch.setenv("MLFLOW_TRACKING_URI", f"file:{tmp_path / 'mlruns'}")
+
+    class FailingCandidate:
+        def fit(self, features, target):
+            raise RuntimeError("training failed")
+
+    monkeypatch.setattr("app.main.clone", lambda _model: FailingCandidate())
+    records = [
+        {**valid_payload, "classe_retour_emploi": index % 3}
+        for index in range(10)
+    ]
+
+    response = client.post("/train", json={"records": records})
+
+    assert response.status_code == 500
+    assert response.json()["detail"] == "Training failed: RuntimeError"
 
 
 def test_metrics_endpoint_exposes_prometheus(client, valid_payload):

@@ -17,3 +17,13 @@ scrape_configs:
     metrics_path: /drift-metrics
     static_configs:
       - targets: ["backend:8001"]
+
+  - job_name: "backend-evaluation"
+    metrics_path: /evaluation-metrics
+    static_configs:
+      - targets: ["backend:8001"]
+
+  - job_name: "backend-retrain"
+    metrics_path: /retrain-metrics
+    static_configs:
+      - targets: ["backend:8001"]

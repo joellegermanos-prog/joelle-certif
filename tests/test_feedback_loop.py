@@ -7,6 +7,7 @@ import pandas as pd
 from scripts.retrain import (
     TARGET_COLUMN,
     build_training_data,
+    next_promoted_version,
     reference_holdout_indices,
     should_retrain,
 )
@@ -58,12 +59,20 @@ def test_retrain_trigger_starts_at_threshold():
     assert should_retrain(200, 200) is True
 
 
+def test_promoted_model_version_increments_semver_and_migrates_legacy_tag():
+    assert next_promoted_version("v1.0.1", "v1.0.0") == "v1.0.2"
+    assert next_promoted_version("promoted-20260929004805", "v1.0.0") == "v1.0.1"
+    assert next_promoted_version(None, "unknown") == "v1.0.0"
+
+
 def test_low_feedback_run_writes_structured_result(tmp_path, monkeypatch):
     from scripts import retrain
 
     result_path = tmp_path / "reports" / "retrain-result.json"
+    metrics_path = tmp_path / "reports" / "retrain.prom"
     monkeypatch.setattr(retrain, "load_unconsumed_feedbacks", pd.DataFrame)
     monkeypatch.setenv("RETRAIN_RESULT_PATH", str(result_path))
+    monkeypatch.setenv("RETRAIN_METRICS_PATH", str(metrics_path))
     monkeypatch.setattr(sys, "argv", ["retrain.py", "--min-feedback", "2"])
 
     assert retrain.main() == 0
@@ -74,6 +83,11 @@ def test_low_feedback_run_writes_structured_result(tmp_path, monkeypatch):
         "excluded_feedbacks": 0,
         "min_feedback": 2,
     }
+    metrics = metrics_path.read_text(encoding="utf-8")
+    assert 'cisia_retrain_last_run_status_info{status="skipped_low_volume"} 1' in metrics
+    assert "cisia_retrain_last_run_new_feedbacks 0" in metrics
+    assert "cisia_retrain_last_run_min_feedback 2" in metrics
+    assert "cisia_retrain_candidate_trained 0" in metrics
 
 
 def test_feedback_training_data_keeps_cisia_three_class_labels(tmp_path, monkeypatch):
