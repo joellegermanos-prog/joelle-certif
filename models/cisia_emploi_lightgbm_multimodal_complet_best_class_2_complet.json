@@ -4,7 +4,7 @@
   "model_version": "v1.0.0",
   "scenario_name": "multimodal_complet",
   "config_name": "best_class_2_complet",
-  "created_at_utc": "2026-09-29T23:06:20.428192+00:00",
+  "created_at_utc": "2026-10-01T10:13:06.025382+00:00",
   "versions": {
     "python": "3.12.10",
     "scikit_learn": "1.5.1",
@@ -2616,7 +2616,7 @@
     }
   },
   "training": {
-    "training_seconds": 0.8157909000001382,
+    "training_seconds": 0.7975861000013538,
     "trained_on": "train_split_only",
     "cross_validation": {
       "enabled": true,
@@ -2677,7 +2677,7 @@
   "artifacts": {
     "model_path": "C:\\Users\\a895479\\projet\\certification\\models\\cisia_emploi_lightgbm_multimodal_complet_best_class_2_complet.joblib",
     "metadata_path": "C:\\Users\\a895479\\projet\\certification\\models\\cisia_emploi_lightgbm_multimodal_complet_best_class_2_complet.json",
-    "model_size_bytes": 689322,
-    "model_size_mb": 0.657389
+    "model_size_bytes": 689321,
+    "model_size_mb": 0.657388
   }
 }

@@ -4,7 +4,7 @@
   "model_version": "v1.0.0",
   "scenario_name": "texte_seul",
   "config_name": "balanced",
-  "created_at_utc": "2026-09-29T22:48:59.208897+00:00",
+  "created_at_utc": "2026-10-01T09:39:36.731942+00:00",
   "versions": {
     "python": "3.12.10",
     "scikit_learn": "1.5.1",
@@ -2535,7 +2535,7 @@
     }
   },
   "scenario": {
-    "description": "Synthèse d'entretien uniquement avec TF-IDF.",
+    "description": "Variable texte uniquement.",
     "include_sensitive": false,
     "include_text": true,
     "text_only": true
@@ -2580,7 +2580,7 @@
     }
   },
   "training": {
-    "training_seconds": 0.06644670000241604,
+    "training_seconds": 0.09760440001264215,
     "trained_on": "train_split_only",
     "cross_validation": {
       "enabled": true,

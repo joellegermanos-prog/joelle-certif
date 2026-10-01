@@ -4,7 +4,7 @@
   "model_version": "v1.0.0",
   "scenario_name": "multimodal_ethique",
   "config_name": "balanced",
-  "created_at_utc": "2026-09-29T22:48:41.607230+00:00",
+  "created_at_utc": "2026-10-01T09:39:20.811093+00:00",
   "versions": {
     "python": "3.12.10",
     "scikit_learn": "1.5.1",
@@ -2599,7 +2599,7 @@
     }
   },
   "training": {
-    "training_seconds": 1.0232418999949005,
+    "training_seconds": 0.8921126000059303,
     "trained_on": "train_split_only",
     "cross_validation": {
       "enabled": true,
@@ -2660,7 +2660,7 @@
   "artifacts": {
     "model_path": "C:\\Users\\a895479\\projet\\certification\\models\\cisia_emploi_random_forest_multimodal_ethique_balanced.joblib",
     "metadata_path": "C:\\Users\\a895479\\projet\\certification\\models\\cisia_emploi_random_forest_multimodal_ethique_balanced.json",
-    "model_size_bytes": 4565883,
-    "model_size_mb": 4.354365
+    "model_size_bytes": 4565882,
+    "model_size_mb": 4.354364
   }
 }

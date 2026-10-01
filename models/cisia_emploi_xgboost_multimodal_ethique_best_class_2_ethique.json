@@ -4,7 +4,7 @@
   "model_version": "v1.0.0",
   "scenario_name": "multimodal_ethique",
   "config_name": "best_class_2_ethique",
-  "created_at_utc": "2026-09-29T23:06:28.098882+00:00",
+  "created_at_utc": "2026-10-01T10:15:12.336477+00:00",
   "versions": {
     "python": "3.12.10",
     "scikit_learn": "1.5.1",
@@ -2611,7 +2611,7 @@
     }
   },
   "training": {
-    "training_seconds": 0.7816262999986066,
+    "training_seconds": 0.9243972999975085,
     "trained_on": "train_split_only",
     "cross_validation": {
       "enabled": true,

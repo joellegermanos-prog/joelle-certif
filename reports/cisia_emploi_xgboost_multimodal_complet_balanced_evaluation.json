@@ -1,6 +1,6 @@
 {
   "status": "completed",
-  "evaluated_at_utc": "2026-09-29T23:08:35.643821+00:00",
+  "evaluated_at_utc": "2026-10-01T10:16:12.919125+00:00",
   "model_name": "cisia_emploi",
   "model_type": "xgboost",
   "scenario_name": "multimodal_complet",
@@ -12,12 +12,12 @@
     "sha256": "2b9cb8c813b5f97540f0130b5e1cae2bad7ce5cbc1f57ffce51f54b498a7b34e"
   },
   "metrics": {
-    "latency_mean_ms": 8.981138999952236,
-    "latency_median_ms": 8.579299996199552,
-    "latency_p95_ms": 11.569940000481436,
-    "cpu_mean_ms": 52.96875,
+    "latency_mean_ms": 11.086425000394229,
+    "latency_median_ms": 11.023700004443526,
+    "latency_p95_ms": 13.69358499214286,
+    "cpu_mean_ms": 67.1875,
     "cpu_p95_ms": 125.0,
-    "cpu_seconds_1000_predictions": 52.96875,
+    "cpu_seconds_1000_predictions": 67.1875,
     "latency_samples": 100,
     "accuracy": 0.736,
     "f1_macro": 0.7171474844405671,

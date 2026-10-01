@@ -4,7 +4,7 @@
   "model_version": "v1.0.0",
   "scenario_name": "tabulaire_seul",
   "config_name": "balanced",
-  "created_at_utc": "2026-09-29T22:50:19.383969+00:00",
+  "created_at_utc": "2026-10-01T09:40:43.027420+00:00",
   "versions": {
     "python": "3.12.10",
     "scikit_learn": "1.5.1",
@@ -2614,7 +2614,7 @@
     }
   },
   "training": {
-    "training_seconds": 1.7102046999934828,
+    "training_seconds": 1.2617615000053775,
     "trained_on": "train_split_only",
     "cross_validation": {
       "enabled": true,

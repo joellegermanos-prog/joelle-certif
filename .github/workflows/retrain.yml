@@ -16,7 +16,7 @@ on:
         required: false
         default: "false"
   schedule:
-    - cron: "0 */6 * * *"
+    - cron: "0 0 1 * *"
 
 concurrency:
   # Nom de groupe partagé avec tout autre workflow qui touche au même
@@ -232,6 +232,16 @@ jobs:
                 Set-Content -LiteralPath $envBackupPath -Encoding utf8
             }
 
+            $previousArtifactLine = Get-Content -LiteralPath $envBackupPath |
+              Where-Object { $_ -match '^\s*MODEL_ARTIFACT\s*=' } |
+              Select-Object -First 1
+            if ($previousArtifactLine -and
+                ($previousArtifactLine -split '=', 2)[1].Trim().Trim('"') -eq "/app/models/cisia_emploi_promoted.joblib" -and
+                ((-not (Test-Path -LiteralPath (Join-Path $modelsBackupDir "cisia_emploi_promoted_$backupId.joblib"))) -or
+                 (-not (Test-Path -LiteralPath (Join-Path $modelsBackupDir "cisia_emploi_promoted_$backupId.json"))))) {
+              throw "The active promoted model or its metadata could not be backed up. Retraining was not started."
+            }
+
             Get-ChildItem -LiteralPath $envBackupDir -Filter "*.env.bak" |
               Sort-Object LastWriteTime -Descending | Select-Object -Skip 10 |
               Remove-Item -Force
@@ -276,6 +286,9 @@ jobs:
             if ([string]::IsNullOrWhiteSpace($result.status)) {
               throw "The retraining result report has no status."
             }
+            if ($result.status -notin @("promoted", "rejected", "skipped_low_volume")) {
+              throw "The retraining result report has an unsupported status: $($result.status)"
+            }
             "status=$($result.status)" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
 
             $snapshotId = "${{ steps.snapshot.outputs.backup_id }}"
@@ -312,26 +325,35 @@ jobs:
               docker compose up -d --force-recreate model
               if ($LASTEXITCODE -ne 0) {
                 Write-Warning "Activation failed: restoring the previous .env automatically."
-                if (Test-Path -LiteralPath $envBackupPath) {
-                  if (Test-Path -LiteralPath $modelBackupPath) {
-                    Copy-Item -LiteralPath $modelBackupPath -Destination (Join-Path $env:DEPLOY_PATH "services\model\models\cisia_emploi_promoted.joblib") -Force
+                if (-not (Test-Path -LiteralPath $envBackupPath)) {
+                  throw "Automatic restoration failed: the previous .env backup is missing."
+                }
+                $previousArtifactLine = Get-Content -LiteralPath $envBackupPath |
+                  Where-Object { $_ -match '^\s*MODEL_ARTIFACT\s*=' } |
+                  Select-Object -First 1
+                $previousArtifact = if ($previousArtifactLine) {
+                  ($previousArtifactLine -split '=', 2)[1].Trim().Trim('"')
+                } else {
+                  "/app/models/cisia_emploi_xgboost_multimodal_ethique_best_class_2_ethique.joblib"
+                }
+                if ($previousArtifact -eq "/app/models/cisia_emploi_promoted.joblib") {
+                  if (-not (Test-Path -LiteralPath $modelBackupPath) -or
+                      -not (Test-Path -LiteralPath $metadataBackupPath)) {
+                    throw "Automatic restoration failed: the previous promoted model backup is incomplete."
                   }
-                  if (Test-Path -LiteralPath $metadataBackupPath) {
-                    Copy-Item -LiteralPath $metadataBackupPath -Destination (Join-Path $env:DEPLOY_PATH "services\model\models\cisia_emploi_promoted.json") -Force
-                  }
-                  Copy-Item -LiteralPath $envBackupPath -Destination $envFile -Force
-                  $previousArtifactLine = Get-Content -LiteralPath $envBackupPath |
-                    Where-Object { $_ -match '^\s*MODEL_ARTIFACT\s*=' } |
-                    Select-Object -First 1
-                  if ($previousArtifactLine) {
-                    $env:MODEL_ARTIFACT = ($previousArtifactLine -split '=', 2)[1].Trim().Trim('"')
-                  } else {
-                    Remove-Item Env:MODEL_ARTIFACT -ErrorAction SilentlyContinue
-                  }
-                  docker compose up -d --force-recreate model
-                  if ($LASTEXITCODE -ne 0) {
-                    throw "Automatic restoration of the previous model failed."
-                  }
+                  $modelsDir = Join-Path $env:DEPLOY_PATH "services\model\models"
+                  Copy-Item -LiteralPath $modelBackupPath -Destination (Join-Path $modelsDir "cisia_emploi_promoted.joblib") -Force
+                  Copy-Item -LiteralPath $metadataBackupPath -Destination (Join-Path $modelsDir "cisia_emploi_promoted.json") -Force
+                }
+                Copy-Item -LiteralPath $envBackupPath -Destination $envFile -Force
+                if ($previousArtifactLine) {
+                  $env:MODEL_ARTIFACT = $previousArtifact
+                } else {
+                  Remove-Item Env:MODEL_ARTIFACT -ErrorAction SilentlyContinue
+                }
+                docker compose up -d --force-recreate model
+                if ($LASTEXITCODE -ne 0) {
+                  throw "Automatic restoration of the previous model failed."
                 }
                 throw "The promoted model could not be activated. Previous .env restored."
               }

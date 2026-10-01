@@ -4,7 +4,7 @@
   "model_version": "v1.0.0",
   "scenario_name": "multimodal_complet",
   "config_name": "balanced",
-  "created_at_utc": "2026-09-29T22:48:57.233091+00:00",
+  "created_at_utc": "2026-10-01T09:39:34.967865+00:00",
   "versions": {
     "python": "3.12.10",
     "scikit_learn": "1.5.1",
@@ -2602,7 +2602,7 @@
     }
   },
   "training": {
-    "training_seconds": 0.21959700000297744,
+    "training_seconds": 0.2028920000011567,
     "trained_on": "train_split_only",
     "cross_validation": {
       "enabled": true,
