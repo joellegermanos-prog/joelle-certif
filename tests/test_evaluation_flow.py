@@ -119,6 +119,7 @@ def test_default_grid_search_candidate_counts(
 ) -> None:
     candidate_counts: list[int] = []
     scorer_names: list[set[str]] = []
+    fit_parameters_seen: list[dict[str, object]] = []
 
     class DummyPipeline:
         def set_params(self, **parameters: object) -> DummyPipeline:
@@ -126,7 +127,6 @@ def test_default_grid_search_candidate_counts(
 
     class GridSearchSpy:
         def __init__(self, **kwargs: object) -> None:
-            self.fit_parameters: list[dict[str, object]] = []
             candidate_counts.append(
                 len(ParameterGrid(kwargs["param_grid"]))
             )
@@ -148,7 +148,7 @@ def test_default_grid_search_candidate_counts(
             y: pd.Series,
             **fit_parameters: object,
         ) -> GridSearchSpy:
-            self.fit_parameters.append(fit_parameters)
+            fit_parameters_seen.append(fit_parameters)
             return self
 
     monkeypatch.setattr(train_module, "GridSearchCV", GridSearchSpy)
@@ -181,7 +181,7 @@ def test_default_grid_search_candidate_counts(
     assert candidate_counts == [32, 8, 64, 16]
     assert all("error_0_to_2" in names for names in scorer_names)
     np.testing.assert_array_equal(
-        GridSearchSpy.fit_parameters[-1]["classifier__sample_weight"],
+        fit_parameters_seen[-1]["classifier__sample_weight"],
         [1.0, 1.0, 1.0, 1.0, 2.5, 2.5],
     )
 

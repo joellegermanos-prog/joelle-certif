@@ -9,6 +9,7 @@ for module_name in ("app.main", "app.middleware", "app.schemas", "app"):
     sys.modules.pop(module_name, None)
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
+from app import main as backend_main
 from app.main import app
 from fastapi.testclient import TestClient
 
@@ -237,7 +238,7 @@ def test_user_registry_unavailable_returns_503(monkeypatch):
     async def reject_user(self, user_id):
         raise UserRegistryError("User registry unavailable")
 
-    monkeypatch.setattr("app.main.UserRegistryClient.ensure_user_exists", reject_user)
+        monkeypatch.setattr("app.main.UserRegistryClient.ensure_user_exists", reject_user)
     response = TestClient(app).post(
         "/score",
         json={**VALID_APPLICATION, "usager_id": "unknown-user"},
@@ -338,7 +339,7 @@ def test_feedback_is_idempotent_and_rejects_conflict():
 def test_evaluation_metrics_endpoint_serves_latest_gate(monkeypatch, tmp_path):
     metrics_path = tmp_path / "evaluation.prom"
     metrics_path.write_text("cisia_evaluation_gate_status 1\n", encoding="utf-8")
-    monkeypatch.setattr("app.main.EVALUATION_METRICS_FILE", metrics_path)
+    monkeypatch.setattr(backend_main, "EVALUATION_METRICS_FILE", metrics_path)
 
     response = TestClient(app).get("/evaluation-metrics")
 
@@ -352,7 +353,7 @@ def test_retrain_metrics_endpoint_serves_latest_run(monkeypatch, tmp_path):
         'cisia_retrain_last_run_status_info{status="skipped_low_volume"} 1\n',
         encoding="utf-8",
     )
-    monkeypatch.setattr("app.main.RETRAIN_METRICS_FILE", metrics_path)
+    monkeypatch.setattr(backend_main, "RETRAIN_METRICS_FILE", metrics_path)
 
     response = TestClient(app).get("/retrain-metrics")
 

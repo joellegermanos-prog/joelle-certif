@@ -26,7 +26,80 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  rollback:
+    if: ${{ github.event_name == 'workflow_dispatch' && inputs.rollback == 'true' }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    env:
+      DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+      DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
+      DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+      DEPLOY_PORT: ${{ secrets.DEPLOY_PORT || '22' }}
+      DEPLOY_PATH: ${{ vars.DEPLOY_PATH || secrets.DEPLOY_PATH }}
+    steps:
+      - name: Validate SSH rollback configuration
+        shell: bash
+        run: |
+          set -euo pipefail
+          for variable in DEPLOY_HOST DEPLOY_USER DEPLOY_SSH_KEY DEPLOY_PATH; do
+            if [ -z "${!variable}" ]; then
+              echo "Required deployment setting is missing: $variable" >&2
+              exit 1
+            fi
+          done
+
+      - name: Restore previous model over SSH
+        id: rollback
+        uses: appleboy/ssh-action@v1.2.2
+        env:
+          DEPLOY_PATH: ${{ env.DEPLOY_PATH }}
+        with:
+          host: ${{ env.DEPLOY_HOST }}
+          username: ${{ env.DEPLOY_USER }}
+          key: ${{ env.DEPLOY_SSH_KEY }}
+          port: ${{ env.DEPLOY_PORT }}
+          envs: DEPLOY_PATH
+          script_stop: true
+          script: |
+            set -eu
+            cd "$DEPLOY_PATH"
+            backup_dir="$DEPLOY_PATH/backups/env"
+            models_backup_dir="$DEPLOY_PATH/backups/models"
+            last_backup="$(find "$backup_dir" -maxdepth 1 -type f -name '*.env.bak' -printf '%T@ %p\n' | sort -nr | head -n 1 | cut -d' ' -f2-)"
+            if [ -z "$last_backup" ]; then
+              echo "No previous environment backup found in $backup_dir" >&2
+              exit 1
+            fi
+
+            backup_id="$(basename "$last_backup" .env.bak)"
+            previous_artifact="$(grep -a -m 1 'MODEL_ARTIFACT=' "$last_backup" | sed -E 's/.*MODEL_ARTIFACT[[:space:]]*=[[:space:]]*//; s/[\"\r]//g' || true)"
+            if [ "$previous_artifact" = "/app/models/cisia_emploi_promoted.joblib" ]; then
+              model_backup="$models_backup_dir/cisia_emploi_promoted_$backup_id.joblib"
+              metadata_backup="$models_backup_dir/cisia_emploi_promoted_$backup_id.json"
+              if [ ! -f "$model_backup" ] || [ ! -f "$metadata_backup" ]; then
+                echo "Previous promoted model backup is missing for $backup_id" >&2
+                exit 1
+              fi
+              cp -f "$model_backup" "$DEPLOY_PATH/services/model/models/cisia_emploi_promoted.joblib"
+              cp -f "$metadata_backup" "$DEPLOY_PATH/services/model/models/cisia_emploi_promoted.json"
+            fi
+
+            cp -f "$last_backup" "$DEPLOY_PATH/.env"
+            docker compose up -d --force-recreate model
+            docker compose ps model
+      - name: Publish rollback summary
+        if: always()
+        shell: bash
+        run: |
+          {
+            echo "## Retour-Emploi manual rollback"
+            echo "Execution: GitHub-hosted runner over SSH."
+            echo "SSH rollback step: ${{ steps.rollback.outcome || 'see job status' }}"
+          } >> "$GITHUB_STEP_SUMMARY"
+
   retrain:
+    if: ${{ github.event_name != 'workflow_dispatch' || inputs.rollback != 'true' }}
     runs-on: [self-hosted, windows, x64, cisia-prod]
     permissions:
       contents: read
